@@ -1,0 +1,7 @@
+---
+source: crates/plexuspact-report/tests/human_tests.rs
+expression: out
+---
+✗ orders — 1 of 3 checks failed (0 rows in 0.0s)
+
+  ✗ dataset · row_count_min: 1    expected at least 1 row, found 0

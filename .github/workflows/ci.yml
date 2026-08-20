@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: "1"
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  fmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  clippy:
+    name: clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --all-targets -- -D warnings
+
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      # rust-toolchain.toml pins stable-x86_64-pc-windows-gnu so local Windows
+      # contributors don't need MSVC Build Tools. CI runners *do* have MSVC, and
+      # release Windows binaries are MSVC, so CI tests the msvc host toolchain.
+      # dtolnay/rust-toolchain exports RUSTUP_TOOLCHAIN=stable, which takes
+      # precedence over rust-toolchain.toml; pinning the default host makes
+      # "stable" resolve to stable-x86_64-pc-windows-msvc explicitly.
+      - name: Use MSVC host toolchain on Windows
+        if: runner.os == 'Windows'
+        run: rustup set default-host x86_64-pc-windows-msvc
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --workspace
+
+  deny:
+    name: cargo-deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+
+  layering:
+    name: layering guard (ADR-002)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      # The contract crate must stay free of Polars so Python bindings and the
+      # Phase 2 agent can reuse it without a DataFrame runtime (ADR-002).
+      - name: plexuspact-contract must not depend on polars
+        run: |
+          if cargo tree -p plexuspact-contract -e normal | grep -qi '^.*polars'; then
+            echo "::error::plexuspact-contract must not depend on polars (ADR-002)"
+            cargo tree -p plexuspact-contract -e normal | grep -i polars || true
+            exit 1
+          fi
+          echo "OK: plexuspact-contract has no polars dependency"
+
+  docs:
+    name: docs build
+    runs-on: ubuntu-latest
+    env:
+      RUSTDOCFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: API docs
+        run: cargo doc --workspace --no-deps
+      - name: Install mdBook
+        uses: taiki-e/install-action@v2
+        with:
+          tool: mdbook
+      - name: Book
+        run: mdbook build docs

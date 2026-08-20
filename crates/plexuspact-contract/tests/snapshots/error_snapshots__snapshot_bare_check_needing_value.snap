@@ -1,0 +1,14 @@
+---
+source: crates/plexuspact-contract/tests/error_snapshots.rs
+expression: "render(\"apiVersion: v1\\ndataset: t\\ncolumns:\\n  age: { type: int, checks: [min] }\\n\")"
+---
+plexuspact::contract::parse
+
+  × check `min` requires a value; write it in map form, e.g. `{ min: 18 }` (at
+  │ `columns.age.checks[0]`)
+   ╭─[contract.yaml:4:30]
+ 3 │ columns:
+ 4 │   age: { type: int, checks: [min] }
+   ·                              ─┬─
+   ·                               ╰── invalid check
+   ╰────

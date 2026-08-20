@@ -1,0 +1,52 @@
+name: Feature request
+description: Propose a new check, flag, input format, or other improvement.
+title: "feat: "
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing: check the [roadmap section of the README](https://github.com/dataplexor/plexuspact#roadmap).
+        Some frequent asks are already planned (quarantine mode, AI-assisted authoring — Phase 1.5) or
+        deliberately out of scope for now (warehouse connectors, anomaly detection, data repair — Phase 2+).
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do that you can't today? Describe the workflow, not the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: If it's a new check, sketch the YAML you'd want to write and the failure output you'd expect.
+      render: yaml
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds you tried (custom_expr, pre-processing, another tool) and why they fall short.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - New check type
+        - CLI flag / UX
+        - Input format / IO
+        - Output format / reports
+        - GitHub Action / CI
+        - Docs
+        - Other
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Preflight
+      options:
+        - label: I searched existing issues and the roadmap for this request.
+          required: true

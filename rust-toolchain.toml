@@ -1,0 +1,8 @@
+# Exact-pinned toolchain (doc 04 §1). Host triple is deliberately unspecified so
+# Linux/macOS/Windows contributors all get their native host toolchain.
+# Windows machines without MSVC Build Tools: use the GNU toolchain via a local
+# (uncommitted) override — `rustup override set stable-x86_64-pc-windows-gnu`
+# in the repo root — plus a mingw-w64 GCC on PATH; see CONTRIBUTING.md.
+[toolchain]
+channel = "1.97.0"
+components = ["rustfmt", "clippy"]

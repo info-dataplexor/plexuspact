@@ -1,0 +1,15 @@
+---
+source: crates/plexuspact-contract/tests/error_snapshots.rs
+expression: "render(\"apiVersion: v1\\ndataset: t\\ncolumns:\\n  email: { type: string, pii: emails }\\n\")"
+---
+plexuspact::contract::parse
+
+  × unknown value `emails` — did you mean `email`? (at `columns.email.pii`)
+   ╭─[contract.yaml:4:31]
+ 3 │ columns:
+ 4 │   email: { type: string, pii: emails }
+   ·                               ───┬──
+   ·                                  ╰── unrecognized value
+   ╰────
+  help: valid values here are: none, email, phone, name, address, national_id,
+        financial, health, other

@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>plexuspact · {{ dataset }}</title>
+<style>
+  :root {
+    --green: #16a34a;
+    --red: #dc2626;
+    --amber: #d97706;
+    --ink: #111827;
+    --muted: #6b7280;
+    --line: #e5e7eb;
+    --bg: #f9fafb;
+    --card: #ffffff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 15px;
+    line-height: 1.5;
+  }
+  code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.92em; }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 32px 24px 48px; }
+
+  header { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 8px; }
+  header h1 { font-size: 26px; margin: 0; font-weight: 700; }
+  .badge {
+    display: inline-block; padding: 4px 14px; border-radius: 999px;
+    font-weight: 700; font-size: 13px; letter-spacing: 0.06em; color: #fff;
+  }
+  .badge.pass { background: var(--green); }
+  .badge.fail { background: var(--red); }
+  .subtitle { color: var(--muted); margin: 0 0 24px; }
+
+  .meta {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+    gap: 1px; background: var(--line); border: 1px solid var(--line);
+    border-radius: 8px; overflow: hidden; margin-bottom: 24px;
+  }
+  .meta div { background: var(--card); padding: 10px 14px; }
+  .meta dt { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0; }
+  .meta dd { margin: 2px 0 0; font-weight: 600; overflow-wrap: anywhere; }
+
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 32px; }
+  .tile { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; }
+  .tile .num { font-size: 28px; font-weight: 700; line-height: 1.1; }
+  .tile .label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+  .tile.ok .num { color: var(--green); }
+  .tile.err .num { color: var(--red); }
+  .tile.warn .num { color: var(--amber); }
+
+  h2.group { font-size: 14px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 28px 0 10px; }
+  .check {
+    background: var(--card); border: 1px solid var(--line); border-left-width: 4px;
+    border-radius: 8px; padding: 12px 16px; margin-bottom: 10px;
+  }
+  .check.passed { border-left-color: var(--green); }
+  .check.failed { border-left-color: var(--red); }
+  .check.warned { border-left-color: var(--amber); }
+  .check .head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .check .icon { font-weight: 700; }
+  .check.passed .icon { color: var(--green); }
+  .check.failed .icon { color: var(--red); }
+  .check.warned .icon { color: var(--amber); }
+  .check .kind { font-weight: 600; }
+  .check .status { margin-left: auto; font-size: 12px; color: var(--muted); }
+  .check .id { color: var(--muted); font-size: 12px; }
+  .metrics { display: flex; gap: 24px; flex-wrap: wrap; margin-top: 8px; font-size: 13px; color: var(--muted); }
+  .metrics b { color: var(--ink); font-weight: 600; }
+  .message { margin-top: 8px; font-size: 14px; }
+  table.samples, table.observed {
+    border-collapse: collapse; margin-top: 10px; font-size: 13px; width: auto; min-width: 40%;
+  }
+  table.samples th, table.samples td, table.observed th, table.observed td {
+    border: 1px solid var(--line); padding: 4px 12px; text-align: left; overflow-wrap: anywhere;
+  }
+  table.samples th, table.observed th { background: var(--bg); font-weight: 600; color: var(--muted); }
+
+  footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>{{ dataset }}</h1>
+    {% if passed %}<span class="badge pass">{{ status_label }}</span>{% else %}<span class="badge fail">{{ status_label }}</span>{% endif %}
+  </header>
+  <p class="subtitle">Data contract validation report</p>
+
+  <dl class="meta">
+    <div><dt>Source</dt><dd class="mono">{{ source_path }}</dd></div>
+    <div><dt>Format</dt><dd>{{ source_format }}</dd></div>
+    <div><dt>Rows</dt><dd>{{ rows }}</dd></div>
+    <div><dt>Columns</dt><dd>{{ columns }}</dd></div>
+    {% if bytes %}<div><dt>Size</dt><dd>{{ bytes }}</dd></div>{% endif %}
+    {% if contract_path %}<div><dt>Contract</dt><dd class="mono">{{ contract_path }}</dd></div>{% endif %}
+    <div><dt>Contract SHA</dt><dd class="mono">{{ contract_sha_short }}</dd></div>
+    {% if owner %}<div><dt>Owner</dt><dd>{{ owner }}</dd></div>{% endif %}
+    <div><dt>Tool version</dt><dd>{{ tool_version }}</dd></div>
+    <div><dt>Started</dt><dd>{{ started_at }}</dd></div>
+    <div><dt>Duration</dt><dd>{{ duration }}</dd></div>
+  </dl>
+
+  <div class="tiles">
+    <div class="tile"><div class="num">{{ checks_total }}</div><div class="label">Checks</div></div>
+    <div class="tile ok"><div class="num">{{ checks_passed }}</div><div class="label">Passed</div></div>
+    <div class="tile err"><div class="num">{{ failed_error }}</div><div class="label">Failed (error)</div></div>
+    <div class="tile warn"><div class="num">{{ failed_warn }}</div><div class="label">Failed (warn)</div></div>
+  </div>
+
+  {% for group in groups %}
+  <h2 class="group">{{ group.label }}</h2>
+    {% for check in group.checks %}
+    <div class="check {% if check.passed %}passed{% elif check.warn %}warned{% else %}failed{% endif %}">
+      <div class="head">
+        <span class="icon">{{ check.icon }}</span>
+        <span class="kind">{{ check.summary }}</span>
+        <span class="id mono">{{ check.id }} · {{ check.severity }}</span>
+        <span class="status">{{ check.status_label }}</span>
+      </div>
+      <div class="metrics">
+        {% if check.rows_evaluated %}<span>rows evaluated <b>{{ check.rows_evaluated }}</b></span>{% endif %}
+        {% if check.rows_failed %}<span>rows failed <b>{{ check.rows_failed }}</b></span>{% endif %}
+        {% if check.fail_ratio %}<span>fail ratio <b>{{ check.fail_ratio }}</b></span>{% endif %}
+      </div>
+      {% if check.message %}<div class="message">{{ check.message }}</div>{% endif %}
+      {% if check.samples %}
+      <table class="samples">
+        <tr><th>row</th><th>value</th></tr>
+        {% for sample in check.samples %}
+        <tr><td class="mono">{{ sample.row }}</td><td class="mono">{{ sample.value }}</td></tr>
+        {% endfor %}
+      </table>
+      {% endif %}
+      {% if check.observed %}
+      <table class="observed">
+        <tr><th>observed</th><th>value</th></tr>
+        {% for entry in check.observed %}
+        <tr><td>{{ entry.key }}</td><td class="mono">{{ entry.value }}</td></tr>
+        {% endfor %}
+      </table>
+      {% endif %}
+    </div>
+    {% endfor %}
+  {% endfor %}
+
+  <footer>generated by plexuspact v{{ tool_version }}</footer>
+</div>
+</body>
+</html>

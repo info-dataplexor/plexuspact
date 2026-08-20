@@ -1,0 +1,12 @@
+---
+source: crates/plexuspact-contract/tests/error_snapshots.rs
+expression: "render(\"\\n\")"
+---
+plexuspact::contract::parse
+
+  × the contract is empty
+  help: a minimal contract looks like:
+        apiVersion: v1
+        dataset: my_table
+        columns:
+          id: { type: string, required: true }

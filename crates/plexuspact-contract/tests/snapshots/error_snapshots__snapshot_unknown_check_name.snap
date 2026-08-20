@@ -1,0 +1,15 @@
+---
+source: crates/plexuspact-contract/tests/error_snapshots.rs
+expression: "render(\"apiVersion: v1\\ndataset: t\\ncolumns:\\n  id: { type: string, checks: [uniq] }\\n\")"
+---
+plexuspact::contract::parse
+
+  × unknown check `uniq` — did you mean `unique`? (known checks: unique,
+  │ not_empty_string, min, max, regex, enum, length, format, null_ratio_max,
+  │ unique_ratio_min, custom_expr) (at `columns.id.checks[0]`)
+   ╭─[contract.yaml:4:32]
+ 3 │ columns:
+ 4 │   id: { type: string, checks: [uniq] }
+   ·                                ──┬─
+   ·                                  ╰── invalid check
+   ╰────

@@ -1,0 +1,23 @@
+apiVersion: v1
+dataset: user_signups
+owner: growth-team@acme.com
+description: Daily signup export from the app database.
+consumers:
+  - { name: analytics-core, contact: data-team@acme.com }
+
+columns:
+  user_id:   { type: string, required: true, checks: [unique] }
+  email:     { type: string, required: true, pii: email, checks: [{ format: email }] }
+  age:       { type: int,    checks: [{ min: 18 }, { max: 120 }] }
+  country:   { type: string, checks: [{ length: 2 }, { regex: "^[A-Z]{2}$" }] }
+  plan:      { type: string, checks: [{ enum: [free, pro, enterprise] }] }
+  signed_up: { type: datetime, required: true }
+
+dataset_checks:
+  - row_count_min: 1
+  - freshness: { column: signed_up, max_age: 48h, severity: warn }
+  - null_ratio_max: { column: age, ratio: 0.10 }
+
+settings:
+  allow_extra_columns: true
+  on_type_mismatch: error

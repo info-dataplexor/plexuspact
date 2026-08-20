@@ -1,0 +1,853 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "definitions": {
+    "ApiVersion": {
+      "description": "Contract schema version. Only `v1` exists today.",
+      "oneOf": [
+        {
+          "description": "Contract schema version 1 (`apiVersion: v1`).",
+          "enum": [
+            "v1"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "ColType": {
+      "description": "Column data type as declared in the contract.",
+      "oneOf": [
+        {
+          "description": "UTF-8 text.",
+          "enum": [
+            "string"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "64-bit signed integer.",
+          "enum": [
+            "int"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "64-bit float.",
+          "enum": [
+            "float"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Boolean.",
+          "enum": [
+            "bool"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Calendar date (no time component).",
+          "enum": [
+            "date"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Date and time.",
+          "enum": [
+            "datetime"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "ColumnCheck": {
+      "anyOf": [
+        {
+          "enum": [
+            "unique",
+            "not_empty_string"
+          ],
+          "type": "string"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "min": {
+              "$ref": "#/definitions/Number"
+            },
+            "severity": {
+              "$ref": "#/definitions/Severity"
+            }
+          },
+          "required": [
+            "min"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "max": {
+              "$ref": "#/definitions/Number"
+            },
+            "severity": {
+              "$ref": "#/definitions/Severity"
+            }
+          },
+          "required": [
+            "max"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "regex": {
+              "type": "string"
+            },
+            "severity": {
+              "$ref": "#/definitions/Severity"
+            }
+          },
+          "required": [
+            "regex"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "enum": {
+              "items": {
+                "$ref": "#/definitions/EnumValue"
+              },
+              "type": "array"
+            },
+            "severity": {
+              "$ref": "#/definitions/Severity"
+            }
+          },
+          "required": [
+            "enum"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "length": {
+              "$ref": "#/definitions/LengthSpec"
+            },
+            "severity": {
+              "$ref": "#/definitions/Severity"
+            }
+          },
+          "required": [
+            "length"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "format": {
+              "$ref": "#/definitions/KnownFormat"
+            },
+            "severity": {
+              "$ref": "#/definitions/Severity"
+            }
+          },
+          "required": [
+            "format"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "null_ratio_max": {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            "severity": {
+              "$ref": "#/definitions/Severity"
+            }
+          },
+          "required": [
+            "null_ratio_max"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "severity": {
+              "$ref": "#/definitions/Severity"
+            },
+            "unique_ratio_min": {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            }
+          },
+          "required": [
+            "unique_ratio_min"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "custom_expr": {
+              "type": "string"
+            },
+            "severity": {
+              "$ref": "#/definitions/Severity"
+            }
+          },
+          "required": [
+            "custom_expr"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "severity": {
+              "$ref": "#/definitions/Severity"
+            },
+            "unique": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "approx": {
+                      "type": "boolean"
+                    }
+                  },
+                  "type": "object"
+                }
+              ]
+            }
+          },
+          "required": [
+            "unique"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "not_empty_string": {
+              "type": "boolean"
+            },
+            "severity": {
+              "$ref": "#/definitions/Severity"
+            }
+          },
+          "required": [
+            "not_empty_string"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ColumnDef": {
+      "additionalProperties": false,
+      "description": "Definition of a single column in the contract.",
+      "properties": {
+        "checks": {
+          "description": "Column-level checks, evaluated in order.",
+          "items": {
+            "$ref": "#/definitions/ColumnCheck"
+          },
+          "type": "array"
+        },
+        "classification": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/DataClass"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Data classification (reserved, FR-11 — no engine behavior in v1)."
+        },
+        "pii": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PiiKind"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "PII tag (reserved, FR-11 — no engine behavior in v1)."
+        },
+        "required": {
+          "default": false,
+          "description": "If `true`, the column must not contain nulls.",
+          "type": "boolean"
+        },
+        "type": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ColType"
+            }
+          ],
+          "description": "Declared data type."
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    },
+    "Consumer": {
+      "additionalProperties": false,
+      "description": "A downstream consumer of the dataset.\n\nReserved field (PRD FR-11) — parsed and echoed, no engine behavior in v1.",
+      "properties": {
+        "contact": {
+          "description": "Contact for the consumer (email, Slack channel, …).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "Consumer name (team, service, or dashboard).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "DataClass": {
+      "description": "Data classification level of a column.\n\nReserved field (PRD FR-11) — no engine behavior in v1.",
+      "oneOf": [
+        {
+          "description": "May be shared publicly.",
+          "enum": [
+            "public"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Internal use only.",
+          "enum": [
+            "internal"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Restricted to specific teams.",
+          "enum": [
+            "confidential"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Highest sensitivity.",
+          "enum": [
+            "restricted"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "DatasetCheck": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "row_count_min": {
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "severity": {
+              "$ref": "#/definitions/Severity"
+            }
+          },
+          "required": [
+            "row_count_min"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "row_count_max": {
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "severity": {
+              "$ref": "#/definitions/Severity"
+            }
+          },
+          "required": [
+            "row_count_max"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "freshness": {
+              "additionalProperties": false,
+              "properties": {
+                "column": {
+                  "type": "string"
+                },
+                "max_age": {
+                  "type": "string"
+                },
+                "severity": {
+                  "$ref": "#/definitions/Severity"
+                }
+              },
+              "required": [
+                "column",
+                "max_age"
+              ],
+              "type": "object"
+            },
+            "severity": {
+              "$ref": "#/definitions/Severity"
+            }
+          },
+          "required": [
+            "freshness"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "null_ratio_max": {
+              "additionalProperties": false,
+              "properties": {
+                "column": {
+                  "type": "string"
+                },
+                "ratio": {
+                  "maximum": 1.0,
+                  "minimum": 0.0,
+                  "type": "number"
+                },
+                "severity": {
+                  "$ref": "#/definitions/Severity"
+                }
+              },
+              "required": [
+                "column",
+                "ratio"
+              ],
+              "type": "object"
+            },
+            "severity": {
+              "$ref": "#/definitions/Severity"
+            }
+          },
+          "required": [
+            "null_ratio_max"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "severity": {
+              "$ref": "#/definitions/Severity"
+            },
+            "unique_ratio_min": {
+              "additionalProperties": false,
+              "properties": {
+                "column": {
+                  "type": "string"
+                },
+                "ratio": {
+                  "maximum": 1.0,
+                  "minimum": 0.0,
+                  "type": "number"
+                },
+                "severity": {
+                  "$ref": "#/definitions/Severity"
+                }
+              },
+              "required": [
+                "column",
+                "ratio"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "unique_ratio_min"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "custom_expr": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "expr": {
+                      "type": "string"
+                    },
+                    "severity": {
+                      "$ref": "#/definitions/Severity"
+                    }
+                  },
+                  "required": [
+                    "expr"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "severity": {
+              "$ref": "#/definitions/Severity"
+            }
+          },
+          "required": [
+            "custom_expr"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "EnumValue": {
+      "anyOf": [
+        {
+          "description": "Boolean literal.",
+          "type": "boolean"
+        },
+        {
+          "description": "Integer literal.",
+          "format": "int64",
+          "type": "integer"
+        },
+        {
+          "description": "Float literal.",
+          "format": "double",
+          "type": "number"
+        },
+        {
+          "description": "String literal.",
+          "type": "string"
+        }
+      ],
+      "description": "A scalar value allowed inside an `enum` check."
+    },
+    "KnownFormat": {
+      "description": "Built-in value formats accepted by the `format` check.",
+      "oneOf": [
+        {
+          "description": "RFC-5322-ish email address.",
+          "enum": [
+            "email"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "RFC 4122 UUID.",
+          "enum": [
+            "uuid"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "ISO-8601 date (`2026-07-09`).",
+          "enum": [
+            "iso_date"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "ISO-8601 date-time (`2026-07-09T10:11:12Z`).",
+          "enum": [
+            "iso_datetime"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Absolute URL.",
+          "enum": [
+            "url"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "ISO-3166 alpha-2 country code (`DE`, `IN`).",
+          "enum": [
+            "country_code_iso2"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "LengthRange": {
+      "additionalProperties": false,
+      "description": "Inclusive length range for [`LengthSpec::Range`].",
+      "properties": {
+        "max": {
+          "description": "Maximum length (inclusive).",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "min": {
+          "description": "Minimum length (inclusive).",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "LengthSpec": {
+      "anyOf": [
+        {
+          "description": "Exact length in characters.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/definitions/LengthRange"
+            }
+          ],
+          "description": "Inclusive min/max bounds; either side may be omitted."
+        }
+      ],
+      "description": "String-length constraint: exact (`length: 2`) or a range (`length: { min: 1, max: 10 }`)."
+    },
+    "Number": {
+      "anyOf": [
+        {
+          "description": "An integer literal.",
+          "format": "int64",
+          "type": "integer"
+        },
+        {
+          "description": "A float literal.",
+          "format": "double",
+          "type": "number"
+        }
+      ],
+      "description": "A YAML number: integer or float. `min: 18` parses as [`Number::Int`], `min: 18.5` as [`Number::Float`], and each serializes back the same way."
+    },
+    "PiiKind": {
+      "description": "Kind of personally identifiable information stored in a column.\n\nReserved field (PRD FR-11): parsed, validated, and echoed into results — no engine behavior until Phase 2 (blast radius, compliance evidence).",
+      "oneOf": [
+        {
+          "description": "Explicitly not PII.",
+          "enum": [
+            "none"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Email addresses.",
+          "enum": [
+            "email"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Phone numbers.",
+          "enum": [
+            "phone"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Personal names.",
+          "enum": [
+            "name"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Physical addresses.",
+          "enum": [
+            "address"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Government identifiers (SSN, Aadhaar, …).",
+          "enum": [
+            "national_id"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Financial data (account/card numbers, balances).",
+          "enum": [
+            "financial"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Health data.",
+          "enum": [
+            "health"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "PII not covered by the other kinds.",
+          "enum": [
+            "other"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "Settings": {
+      "additionalProperties": false,
+      "description": "Dataset-wide validation settings.",
+      "properties": {
+        "allow_extra_columns": {
+          "default": true,
+          "description": "Whether columns not declared in the contract are allowed (default `true`).",
+          "type": "boolean"
+        },
+        "columns_exact": {
+          "default": false,
+          "description": "Whether the dataset must contain *exactly* the declared columns (default `false`).",
+          "type": "boolean"
+        },
+        "on_type_mismatch": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/Severity"
+            }
+          ],
+          "default": "error",
+          "description": "Severity applied when a value cannot be read as the declared type (default `error`)."
+        }
+      },
+      "type": "object"
+    },
+    "Severity": {
+      "description": "Severity of a failed check: `error` fails the run, `warn` is reported only.",
+      "oneOf": [
+        {
+          "description": "The check failing makes the run fail (exit code 1). Default.",
+          "enum": [
+            "error"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "The check failing is reported but does not fail the run (unless `--strict`).",
+          "enum": [
+            "warn"
+          ],
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "description": "A parsed data contract (the root of `contract.yaml`).",
+  "properties": {
+    "apiVersion": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/ApiVersion"
+        }
+      ],
+      "description": "Contract schema version (`apiVersion: v1`)."
+    },
+    "columns": {
+      "additionalProperties": {
+        "$ref": "#/definitions/ColumnDef"
+      },
+      "default": {},
+      "description": "Column definitions, in declaration order.",
+      "type": "object"
+    },
+    "consumers": {
+      "description": "Downstream consumers (reserved, FR-11 — no engine behavior in v1).",
+      "items": {
+        "$ref": "#/definitions/Consumer"
+      },
+      "type": "array"
+    },
+    "dataset": {
+      "description": "Dataset name; part of the contract's identity.",
+      "type": "string"
+    },
+    "dataset_checks": {
+      "description": "Dataset-level checks.",
+      "items": {
+        "$ref": "#/definitions/DatasetCheck"
+      },
+      "type": "array"
+    },
+    "description": {
+      "description": "Human description of the dataset.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "owner": {
+      "description": "Owning team or person.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "settings": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/Settings"
+        }
+      ],
+      "default": {
+        "allow_extra_columns": true,
+        "columns_exact": false,
+        "on_type_mismatch": "error"
+      },
+      "description": "Validation settings."
+    },
+    "version": {
+      "description": "Free-form contract version string (metadata only).",
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "apiVersion",
+    "dataset"
+  ],
+  "title": "Contract",
+  "type": "object"
+}

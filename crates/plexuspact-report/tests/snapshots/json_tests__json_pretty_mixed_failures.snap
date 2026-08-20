@@ -1,0 +1,253 @@
+---
+source: crates/plexuspact-report/tests/json_tests.rs
+expression: out
+---
+{
+  "result_schema_version": 1,
+  "tool_version": "0.1.0",
+  "contract": {
+    "dataset": "user_signups",
+    "path": "contract.yaml",
+    "content_sha256": "abababababababababababababababababababababababababababababababab",
+    "owner": "growth-team@acme.com",
+    "consumers": [
+      {
+        "name": "analytics-core",
+        "contact": "data-team@acme.com"
+      }
+    ]
+  },
+  "source": {
+    "path": "data.csv",
+    "format": "csv",
+    "rows": 1204441,
+    "columns": 6,
+    "bytes": 812345678
+  },
+  "started_at": "2026-07-09T10:11:12Z",
+  "duration_ms": 6231,
+  "status": "failed",
+  "summary": {
+    "checks_total": 14,
+    "passed": 11,
+    "failed_error": 2,
+    "failed_warn": 1
+  },
+  "checks": [
+    {
+      "id": "user_id.required",
+      "column": "user_id",
+      "kind": "required",
+      "severity": "error",
+      "status": "passed",
+      "metrics": {
+        "rows_evaluated": 1204441,
+        "rows_failed": 0,
+        "fail_ratio": 0.0
+      }
+    },
+    {
+      "id": "user_id.unique",
+      "column": "user_id",
+      "kind": "unique",
+      "severity": "error",
+      "status": "passed",
+      "metrics": {
+        "rows_evaluated": 1204441,
+        "rows_failed": 0,
+        "fail_ratio": 0.0
+      }
+    },
+    {
+      "id": "email.required",
+      "column": "email",
+      "kind": "required",
+      "severity": "error",
+      "status": "passed",
+      "metrics": {
+        "rows_evaluated": 1204441,
+        "rows_failed": 0,
+        "fail_ratio": 0.0
+      }
+    },
+    {
+      "id": "email.format.email",
+      "column": "email",
+      "kind": "format",
+      "params": {
+        "format": "email"
+      },
+      "severity": "error",
+      "status": "failed",
+      "metrics": {
+        "rows_evaluated": 1204441,
+        "rows_failed": 3,
+        "fail_ratio": 2.49e-6
+      },
+      "samples": [
+        {
+          "row": 10442,
+          "value": "bob@@example"
+        },
+        {
+          "row": 88310,
+          "value": "alice@"
+        },
+        {
+          "row": 990004,
+          "value": "not-an-email"
+        }
+      ]
+    },
+    {
+      "id": "email.length",
+      "column": "email",
+      "kind": "length",
+      "params": {
+        "min": 3,
+        "max": 254
+      },
+      "severity": "error",
+      "status": "passed",
+      "metrics": {
+        "rows_evaluated": 1204441,
+        "rows_failed": 0,
+        "fail_ratio": 0.0
+      }
+    },
+    {
+      "id": "age.min",
+      "column": "age",
+      "kind": "min",
+      "params": {
+        "min": 18
+      },
+      "severity": "error",
+      "status": "failed",
+      "metrics": {
+        "rows_evaluated": 1204441,
+        "rows_failed": 512,
+        "fail_ratio": 0.000425,
+        "min": 11
+      },
+      "message": "min observed: 11"
+    },
+    {
+      "id": "age.max",
+      "column": "age",
+      "kind": "max",
+      "params": {
+        "max": 120
+      },
+      "severity": "error",
+      "status": "passed",
+      "metrics": {
+        "rows_evaluated": 1204441,
+        "rows_failed": 0,
+        "fail_ratio": 0.0
+      }
+    },
+    {
+      "id": "country.length",
+      "column": "country",
+      "kind": "length",
+      "params": {
+        "length": 2
+      },
+      "severity": "error",
+      "status": "passed",
+      "metrics": {
+        "rows_evaluated": 1204441,
+        "rows_failed": 0,
+        "fail_ratio": 0.0
+      }
+    },
+    {
+      "id": "country.regex",
+      "column": "country",
+      "kind": "regex",
+      "params": {
+        "regex": "^[A-Z]{2}$"
+      },
+      "severity": "error",
+      "status": "passed",
+      "metrics": {
+        "rows_evaluated": 1204441,
+        "rows_failed": 0,
+        "fail_ratio": 0.0
+      }
+    },
+    {
+      "id": "plan.enum",
+      "column": "plan",
+      "kind": "enum",
+      "params": {
+        "enum": [
+          "free",
+          "pro",
+          "enterprise"
+        ]
+      },
+      "severity": "error",
+      "status": "passed",
+      "metrics": {
+        "rows_evaluated": 1204441,
+        "rows_failed": 0,
+        "fail_ratio": 0.0
+      }
+    },
+    {
+      "id": "signed_up.required",
+      "column": "signed_up",
+      "kind": "required",
+      "severity": "error",
+      "status": "passed",
+      "metrics": {
+        "rows_evaluated": 1204441,
+        "rows_failed": 0,
+        "fail_ratio": 0.0
+      }
+    },
+    {
+      "id": "dataset.row_count_min",
+      "kind": "row_count_min",
+      "params": {
+        "min": 1
+      },
+      "severity": "error",
+      "status": "passed",
+      "metrics": {
+        "row_count": 1204441
+      }
+    },
+    {
+      "id": "dataset.null_ratio_max.age",
+      "kind": "null_ratio_max",
+      "params": {
+        "column": "age",
+        "ratio": 0.1
+      },
+      "severity": "error",
+      "status": "passed",
+      "metrics": {
+        "rows_evaluated": 1204441,
+        "null_ratio": 0.031
+      }
+    },
+    {
+      "id": "dataset.freshness.signed_up",
+      "column": "signed_up",
+      "kind": "freshness",
+      "params": {
+        "column": "signed_up",
+        "max_age": "48h"
+      },
+      "severity": "warn",
+      "status": "failed",
+      "metrics": {
+        "newest_age_hours": 51
+      },
+      "message": "newest row is 51h old"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+---
+source: crates/plexuspact-contract/tests/error_snapshots.rs
+expression: "render(\"apiVersion: v1\\ndataset: t\\ncolumns:\\n\\tuser_id: { type: string }\\n\")"
+---
+plexuspact::contract::parse
+
+  × found character that cannot start any token, while scanning for the next
+  │ token
+   ╭─[contract.yaml:4:1]
+ 3 │ columns:
+ 4 │     user_id: { type: string }
+   · ──┬─
+   ·   ╰── syntax error here
+   ╰────
+  help: check YAML syntax: indentation is spaces (never tabs), keys end with
+        `:`, and strings with special characters need quotes

@@ -1,0 +1,14 @@
+---
+source: crates/plexuspact-contract/tests/error_snapshots.rs
+expression: "render(\"dataset: t\\ncolumns:\\n  id: { type: string }\\n\")"
+---
+plexuspact::contract::parse
+
+  × missing required key `apiVersion`
+   ╭─[contract.yaml:1:1]
+ 1 │ dataset: t
+   · ───┬───
+   ·    ╰── missing key in this block
+ 2 │ columns:
+   ╰────
+  help: add e.g. `apiVersion: v1`

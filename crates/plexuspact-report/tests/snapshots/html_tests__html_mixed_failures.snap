@@ -1,0 +1,426 @@
+---
+source: crates/plexuspact-report/tests/html_tests.rs
+expression: out
+---
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>plexuspact · user_signups</title>
+<style>
+  :root {
+    --green: #16a34a;
+    --red: #dc2626;
+    --amber: #d97706;
+    --ink: #111827;
+    --muted: #6b7280;
+    --line: #e5e7eb;
+    --bg: #f9fafb;
+    --card: #ffffff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 15px;
+    line-height: 1.5;
+  }
+  code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.92em; }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 32px 24px 48px; }
+
+  header { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 8px; }
+  header h1 { font-size: 26px; margin: 0; font-weight: 700; }
+  .badge {
+    display: inline-block; padding: 4px 14px; border-radius: 999px;
+    font-weight: 700; font-size: 13px; letter-spacing: 0.06em; color: #fff;
+  }
+  .badge.pass { background: var(--green); }
+  .badge.fail { background: var(--red); }
+  .subtitle { color: var(--muted); margin: 0 0 24px; }
+
+  .meta {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+    gap: 1px; background: var(--line); border: 1px solid var(--line);
+    border-radius: 8px; overflow: hidden; margin-bottom: 24px;
+  }
+  .meta div { background: var(--card); padding: 10px 14px; }
+  .meta dt { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0; }
+  .meta dd { margin: 2px 0 0; font-weight: 600; overflow-wrap: anywhere; }
+
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 32px; }
+  .tile { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; }
+  .tile .num { font-size: 28px; font-weight: 700; line-height: 1.1; }
+  .tile .label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+  .tile.ok .num { color: var(--green); }
+  .tile.err .num { color: var(--red); }
+  .tile.warn .num { color: var(--amber); }
+
+  h2.group { font-size: 14px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 28px 0 10px; }
+  .check {
+    background: var(--card); border: 1px solid var(--line); border-left-width: 4px;
+    border-radius: 8px; padding: 12px 16px; margin-bottom: 10px;
+  }
+  .check.passed { border-left-color: var(--green); }
+  .check.failed { border-left-color: var(--red); }
+  .check.warned { border-left-color: var(--amber); }
+  .check .head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .check .icon { font-weight: 700; }
+  .check.passed .icon { color: var(--green); }
+  .check.failed .icon { color: var(--red); }
+  .check.warned .icon { color: var(--amber); }
+  .check .kind { font-weight: 600; }
+  .check .status { margin-left: auto; font-size: 12px; color: var(--muted); }
+  .check .id { color: var(--muted); font-size: 12px; }
+  .metrics { display: flex; gap: 24px; flex-wrap: wrap; margin-top: 8px; font-size: 13px; color: var(--muted); }
+  .metrics b { color: var(--ink); font-weight: 600; }
+  .message { margin-top: 8px; font-size: 14px; }
+  table.samples, table.observed {
+    border-collapse: collapse; margin-top: 10px; font-size: 13px; width: auto; min-width: 40%;
+  }
+  table.samples th, table.samples td, table.observed th, table.observed td {
+    border: 1px solid var(--line); padding: 4px 12px; text-align: left; overflow-wrap: anywhere;
+  }
+  table.samples th, table.observed th { background: var(--bg); font-weight: 600; color: var(--muted); }
+
+  footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>user_signups</h1>
+    <span class="badge fail">FAILED</span>
+  </header>
+  <p class="subtitle">Data contract validation report</p>
+
+  <dl class="meta">
+    <div><dt>Source</dt><dd class="mono">data.csv</dd></div>
+    <div><dt>Format</dt><dd>csv</dd></div>
+    <div><dt>Rows</dt><dd>1,204,441</dd></div>
+    <div><dt>Columns</dt><dd>6</dd></div>
+    <div><dt>Size</dt><dd>812.3 MB</dd></div>
+    <div><dt>Contract</dt><dd class="mono">contract.yaml</dd></div>
+    <div><dt>Contract SHA</dt><dd class="mono">abababababab</dd></div>
+    <div><dt>Owner</dt><dd>growth-team@acme.com</dd></div>
+    <div><dt>Tool version</dt><dd>0.1.0</dd></div>
+    <div><dt>Started</dt><dd>2026-07-09 10:11:12 UTC</dd></div>
+    <div><dt>Duration</dt><dd>6.2s</dd></div>
+  </dl>
+
+  <div class="tiles">
+    <div class="tile"><div class="num">14</div><div class="label">Checks</div></div>
+    <div class="tile ok"><div class="num">11</div><div class="label">Passed</div></div>
+    <div class="tile err"><div class="num">2</div><div class="label">Failed (error)</div></div>
+    <div class="tile warn"><div class="num">1</div><div class="label">Failed (warn)</div></div>
+  </div>
+
+  
+  <h2 class="group">user_id</h2>
+    
+    <div class="check passed">
+      <div class="head">
+        <span class="icon">✓</span>
+        <span class="kind">required</span>
+        <span class="id mono">user_id.required · error</span>
+        <span class="status">passed</span>
+      </div>
+      <div class="metrics">
+        <span>rows evaluated <b>1,204,441</b></span>
+        <span>rows failed <b>0</b></span>
+        <span>fail ratio <b>0%</b></span>
+      </div>
+      
+      
+      
+    </div>
+    
+    <div class="check passed">
+      <div class="head">
+        <span class="icon">✓</span>
+        <span class="kind">unique</span>
+        <span class="id mono">user_id.unique · error</span>
+        <span class="status">passed</span>
+      </div>
+      <div class="metrics">
+        <span>rows evaluated <b>1,204,441</b></span>
+        <span>rows failed <b>0</b></span>
+        <span>fail ratio <b>0%</b></span>
+      </div>
+      
+      
+      
+    </div>
+    
+  
+  <h2 class="group">email</h2>
+    
+    <div class="check passed">
+      <div class="head">
+        <span class="icon">✓</span>
+        <span class="kind">required</span>
+        <span class="id mono">email.required · error</span>
+        <span class="status">passed</span>
+      </div>
+      <div class="metrics">
+        <span>rows evaluated <b>1,204,441</b></span>
+        <span>rows failed <b>0</b></span>
+        <span>fail ratio <b>0%</b></span>
+      </div>
+      
+      
+      
+    </div>
+    
+    <div class="check failed">
+      <div class="head">
+        <span class="icon">✗</span>
+        <span class="kind">format: email</span>
+        <span class="id mono">email.format.email · error</span>
+        <span class="status">failed</span>
+      </div>
+      <div class="metrics">
+        <span>rows evaluated <b>1,204,441</b></span>
+        <span>rows failed <b>3</b></span>
+        <span>fail ratio <b>0.0002%</b></span>
+      </div>
+      
+      
+      <table class="samples">
+        <tr><th>row</th><th>value</th></tr>
+        
+        <tr><td class="mono">10,442</td><td class="mono">bob@@example</td></tr>
+        
+        <tr><td class="mono">88,310</td><td class="mono">alice@</td></tr>
+        
+        <tr><td class="mono">990,004</td><td class="mono">not-an-email</td></tr>
+        
+      </table>
+      
+      
+    </div>
+    
+    <div class="check passed">
+      <div class="head">
+        <span class="icon">✓</span>
+        <span class="kind">length: max=254, min=3</span>
+        <span class="id mono">email.length · error</span>
+        <span class="status">passed</span>
+      </div>
+      <div class="metrics">
+        <span>rows evaluated <b>1,204,441</b></span>
+        <span>rows failed <b>0</b></span>
+        <span>fail ratio <b>0%</b></span>
+      </div>
+      
+      
+      
+    </div>
+    
+  
+  <h2 class="group">age</h2>
+    
+    <div class="check failed">
+      <div class="head">
+        <span class="icon">✗</span>
+        <span class="kind">min: 18</span>
+        <span class="id mono">age.min · error</span>
+        <span class="status">failed</span>
+      </div>
+      <div class="metrics">
+        <span>rows evaluated <b>1,204,441</b></span>
+        <span>rows failed <b>512</b></span>
+        <span>fail ratio <b>0.04%</b></span>
+      </div>
+      <div class="message">min observed: 11</div>
+      
+      
+      <table class="observed">
+        <tr><th>observed</th><th>value</th></tr>
+        
+        <tr><td>min</td><td class="mono">11</td></tr>
+        
+      </table>
+      
+    </div>
+    
+    <div class="check passed">
+      <div class="head">
+        <span class="icon">✓</span>
+        <span class="kind">max: 120</span>
+        <span class="id mono">age.max · error</span>
+        <span class="status">passed</span>
+      </div>
+      <div class="metrics">
+        <span>rows evaluated <b>1,204,441</b></span>
+        <span>rows failed <b>0</b></span>
+        <span>fail ratio <b>0%</b></span>
+      </div>
+      
+      
+      
+    </div>
+    
+  
+  <h2 class="group">country</h2>
+    
+    <div class="check passed">
+      <div class="head">
+        <span class="icon">✓</span>
+        <span class="kind">length: 2</span>
+        <span class="id mono">country.length · error</span>
+        <span class="status">passed</span>
+      </div>
+      <div class="metrics">
+        <span>rows evaluated <b>1,204,441</b></span>
+        <span>rows failed <b>0</b></span>
+        <span>fail ratio <b>0%</b></span>
+      </div>
+      
+      
+      
+    </div>
+    
+    <div class="check passed">
+      <div class="head">
+        <span class="icon">✓</span>
+        <span class="kind">regex: ^[A-Z]{2}$</span>
+        <span class="id mono">country.regex · error</span>
+        <span class="status">passed</span>
+      </div>
+      <div class="metrics">
+        <span>rows evaluated <b>1,204,441</b></span>
+        <span>rows failed <b>0</b></span>
+        <span>fail ratio <b>0%</b></span>
+      </div>
+      
+      
+      
+    </div>
+    
+  
+  <h2 class="group">plan</h2>
+    
+    <div class="check passed">
+      <div class="head">
+        <span class="icon">✓</span>
+        <span class="kind">enum: [free, pro, enterprise]</span>
+        <span class="id mono">plan.enum · error</span>
+        <span class="status">passed</span>
+      </div>
+      <div class="metrics">
+        <span>rows evaluated <b>1,204,441</b></span>
+        <span>rows failed <b>0</b></span>
+        <span>fail ratio <b>0%</b></span>
+      </div>
+      
+      
+      
+    </div>
+    
+  
+  <h2 class="group">signed_up</h2>
+    
+    <div class="check passed">
+      <div class="head">
+        <span class="icon">✓</span>
+        <span class="kind">required</span>
+        <span class="id mono">signed_up.required · error</span>
+        <span class="status">passed</span>
+      </div>
+      <div class="metrics">
+        <span>rows evaluated <b>1,204,441</b></span>
+        <span>rows failed <b>0</b></span>
+        <span>fail ratio <b>0%</b></span>
+      </div>
+      
+      
+      
+    </div>
+    
+  
+  <h2 class="group">dataset</h2>
+    
+    <div class="check passed">
+      <div class="head">
+        <span class="icon">✓</span>
+        <span class="kind">row_count_min: 1</span>
+        <span class="id mono">dataset.row_count_min · error</span>
+        <span class="status">passed</span>
+      </div>
+      <div class="metrics">
+        
+        
+        
+      </div>
+      
+      
+      
+      <table class="observed">
+        <tr><th>observed</th><th>value</th></tr>
+        
+        <tr><td>row_count</td><td class="mono">1204441</td></tr>
+        
+      </table>
+      
+    </div>
+    
+    <div class="check passed">
+      <div class="head">
+        <span class="icon">✓</span>
+        <span class="kind">null_ratio_max: 0.1</span>
+        <span class="id mono">dataset.null_ratio_max.age · error</span>
+        <span class="status">passed</span>
+      </div>
+      <div class="metrics">
+        <span>rows evaluated <b>1,204,441</b></span>
+        
+        
+      </div>
+      
+      
+      
+      <table class="observed">
+        <tr><th>observed</th><th>value</th></tr>
+        
+        <tr><td>null_ratio</td><td class="mono">0.031</td></tr>
+        
+      </table>
+      
+    </div>
+    
+  
+  <h2 class="group">signed_up</h2>
+    
+    <div class="check warned">
+      <div class="head">
+        <span class="icon">⚠</span>
+        <span class="kind">freshness ≤ 48h</span>
+        <span class="id mono">dataset.freshness.signed_up · warn</span>
+        <span class="status">failed (warn)</span>
+      </div>
+      <div class="metrics">
+        
+        
+        
+      </div>
+      <div class="message">newest row is 51h old</div>
+      
+      
+      <table class="observed">
+        <tr><th>observed</th><th>value</th></tr>
+        
+        <tr><td>newest_age_hours</td><td class="mono">51</td></tr>
+        
+      </table>
+      
+    </div>
+    
+  
+
+  <footer>generated by plexuspact v0.1.0</footer>
+</div>
+</body>
+</html>

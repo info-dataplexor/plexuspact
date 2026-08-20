@@ -1,0 +1,14 @@
+---
+source: crates/plexuspact-contract/tests/error_snapshots.rs
+expression: "render(\"apiVersion: v1\\ndataset: t\\ncolumns:\\n  id: { type: text }\\n\")"
+---
+plexuspact::contract::parse
+
+  × unknown value `text` (at `columns.id.type`)
+   ╭─[contract.yaml:4:15]
+ 3 │ columns:
+ 4 │   id: { type: text }
+   ·               ──┬─
+   ·                 ╰── unrecognized value
+   ╰────
+  help: valid values here are: string, int, float, bool, date, datetime

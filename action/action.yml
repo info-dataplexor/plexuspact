@@ -1,0 +1,65 @@
+name: "PlexusPact data contract check"
+description: >-
+  Validate a dataset against a contract.yaml with the plexuspact CLI.
+  Downloads a pinned, checksum-verified release binary, runs the check,
+  annotates the PR with each failed check, and uploads the HTML report.
+author: "PlexusPact contributors"
+branding:
+  icon: check-square
+  color: green
+
+inputs:
+  contract:
+    description: "Path to the contract YAML file (relative to the workspace)."
+    required: true
+  data:
+    description: "Path to the dataset to validate (CSV/Parquet/NDJSON/JSON), or '-' for stdin."
+    required: true
+  version:
+    description: "plexuspact release version to download (without the leading 'v')."
+    required: false
+    default: "0.1.0"
+  strict:
+    description: "Treat warn-severity failures as errors (adds --strict)."
+    required: false
+    default: "false"
+  format:
+    description: >-
+      Output format saved to plexuspact-results.<format> (json | junit | human).
+      PR annotations are only emitted for json (the default).
+    required: false
+    default: "json"
+  report-artifact:
+    description: "Name of the uploaded HTML report artifact. Set to empty string to skip the upload."
+    required: false
+    default: "plexuspact-report"
+
+outputs:
+  exit-code:
+    description: "Exit code of plexuspact check (0 pass, 1 failures, 2 usage error, 3 internal)."
+    value: ${{ steps.check.outputs.exit-code }}
+  results-file:
+    description: "Path to the saved results file."
+    value: ${{ steps.check.outputs.results-file }}
+
+runs:
+  using: composite
+  steps:
+    - id: check
+      shell: bash
+      env:
+        INPUT_CONTRACT: ${{ inputs.contract }}
+        INPUT_DATA: ${{ inputs.data }}
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_STRICT: ${{ inputs.strict }}
+        INPUT_FORMAT: ${{ inputs.format }}
+        GH_REPO: dataplexor/plexuspact
+      run: "$GITHUB_ACTION_PATH/run.sh"
+
+    - name: Upload HTML report
+      if: ${{ always() && inputs.report-artifact != '' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.report-artifact }}
+        path: plexuspact-report.html
+        if-no-files-found: ignore

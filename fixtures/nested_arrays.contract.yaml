@@ -1,0 +1,8 @@
+apiVersion: v1
+dataset: nested_arrays
+columns:
+  id: { type: int, required: true }
+  name: { type: string, required: true }
+  web_pages: { type: string, required: true }
+settings:
+  allow_extra_columns: true

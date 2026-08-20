@@ -1,0 +1,14 @@
+---
+source: crates/plexuspact-contract/tests/error_snapshots.rs
+expression: "render(\"apiVersion: v1\\ndataset: t\\ncolumns:\\n  ts: { type: datetime }\\ndataset_checks:\\n  - freshness: { column: ts, max_age: two-days }\\n\")"
+---
+plexuspact::contract::parse
+
+  × invalid `max_age` duration `two-days` in `freshness`: expected number at
+  │ 0; examples: 30m, 48h, 7d (at `dataset_checks[0]`)
+   ╭─[contract.yaml:6:5]
+ 5 │ dataset_checks:
+ 6 │   - freshness: { column: ts, max_age: two-days }
+   ·     ────┬────
+   ·         ╰── invalid check
+   ╰────

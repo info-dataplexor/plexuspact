@@ -1,0 +1,113 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/plexuspact-contract",
+    "crates/plexuspact-io",
+    "crates/plexuspact-engine",
+    "crates/plexuspact-core",
+    "crates/plexuspact-report",
+    "crates/plexuspact-cli",
+    "xtask",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+license = "Apache-2.0"
+repository = "https://github.com/dataplexor/plexuspact"
+homepage = "https://plexuspact.com"
+authors = ["PlexusPact contributors"]
+
+[workspace.dependencies]
+# Internal crates
+plexuspact-contract = { path = "crates/plexuspact-contract" }
+plexuspact-io = { path = "crates/plexuspact-io" }
+plexuspact-engine = { path = "crates/plexuspact-engine" }
+plexuspact-core = { path = "crates/plexuspact-core" }
+plexuspact-report = { path = "crates/plexuspact-report" }
+
+# DataFrame engine (only plexuspact-io and plexuspact-engine may depend on this)
+polars = { version = "0.46", default-features = false, features = [
+    "lazy",
+    "csv",
+    "parquet",
+    "json",
+    "streaming",
+    "dtype-date",
+    "dtype-datetime",
+    "dtype-time",
+    "dtype-decimal",
+    "strings",
+    "regex",
+    "is_in",
+    "temporal",
+    "timezones",
+    "sql",
+    "round_series",
+    "abs",
+] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+serde_json = "1"
+schemars = "0.8"
+indexmap = { version = "2", features = ["serde"] }
+
+# Errors & diagnostics
+thiserror = "2"
+miette = "7"
+anyhow = "1"
+
+# CLI
+clap = { version = "4", features = ["derive", "env", "wrap_help"] }
+owo-colors = "4"
+comfy-table = "7"
+
+# Reporting
+tera = { version = "1", default-features = false }
+quick-junit = "0.7"
+
+# Runtime utilities
+regex = "1"
+ahash = "0.8"
+chrono = { version = "0.4", features = ["serde"] }
+humantime = "2"
+sha2 = "0.10"
+hex = "0.4"
+url = "2"
+flate2 = "1"
+zstd = "0.13"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Test / dev
+insta = { version = "1", features = ["yaml", "json", "redactions"] }
+assert_cmd = "2"
+predicates = "3"
+proptest = "1"
+tempfile = "3"
+criterion = "0.5"
+rand = "0.8"
+rand_chacha = "0.3"
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+missing_debug_implementations = "warn"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+
+[profile.dev.package."*"]
+opt-level = 1

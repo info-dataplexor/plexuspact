@@ -1,0 +1,16 @@
+---
+source: crates/plexuspact-contract/tests/error_snapshots.rs
+expression: "render(\"apiVersion: v1\\ndatasett: user_signups\\ncolumns:\\n  id: { type: string }\\n\")"
+---
+plexuspact::contract::parse
+
+  × unknown key `datasett` — did you mean `dataset`?
+   ╭─[contract.yaml:2:1]
+ 1 │ apiVersion: v1
+ 2 │ datasett: user_signups
+   · ────┬───
+   ·     ╰── unrecognized key
+ 3 │ columns:
+   ╰────
+  help: valid keys here are: apiVersion, dataset, owner, description, version,
+        consumers, columns, dataset_checks, settings

@@ -1,0 +1,77 @@
+name: Bug report
+description: Something broke, panicked, or produced a wrong or confusing result.
+title: "bug: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. A reproducible bug with a small fixture gets fixed fastest.
+        **Security issues:** do not file them here — see [SECURITY.md](https://github.com/dataplexor/plexuspact/blob/main/SECURITY.md).
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `plexuspact --version`.
+      placeholder: plexuspact 0.1.0
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Linux (x86_64)
+        - Linux (aarch64)
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Windows
+        - Other (describe below)
+    validations:
+      required: true
+  - type: input
+    id: install-method
+    attributes:
+      label: Install method
+      placeholder: install.sh / Homebrew / Scoop / cargo install / GitHub Action
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Exact command
+      description: The full command line you ran.
+      render: shell
+      placeholder: plexuspact check data.csv --contract contract.yaml --format json
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Paste the full output, including the exit code (`echo $?`). Redact any sensitive values.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction
+      description: >
+        If possible, a tiny contract.yaml plus a few rows of data that reproduce the problem.
+        Please do not attach real production data — synthesize the smallest failing case.
+      render: yaml
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Preflight
+      options:
+        - label: I searched existing issues for this bug.
+          required: true
+        - label: I can reproduce it on the latest release.

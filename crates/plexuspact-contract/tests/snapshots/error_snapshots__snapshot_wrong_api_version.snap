@@ -1,0 +1,14 @@
+---
+source: crates/plexuspact-contract/tests/error_snapshots.rs
+expression: "render(\"apiVersion: v2\\ndataset: t\\ncolumns:\\n  id: { type: string }\\n\")"
+---
+plexuspact::contract::parse
+
+  × unsupported apiVersion `v2`; supported versions: v1
+   ╭─[contract.yaml:1:13]
+ 1 │ apiVersion: v2
+   ·             ─┬
+   ·              ╰── unsupported version
+ 2 │ dataset: t
+   ╰────
+  help: set `apiVersion: v1`

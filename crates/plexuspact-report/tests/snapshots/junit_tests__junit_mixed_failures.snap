@@ -1,0 +1,33 @@
+---
+source: crates/plexuspact-report/tests/junit_tests.rs
+expression: out
+---
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="plexuspact" tests="14" skipped="1" failures="2" errors="0" timestamp="2026-07-09T10:11:12.000+00:00" time="6.231">
+    <testsuite name="user_signups" tests="14" skipped="1" errors="0" failures="2" timestamp="2026-07-09T10:11:12.000+00:00" time="6.231">
+        <testcase name="user_id.required" classname="user_id" time="0.000"/>
+        <testcase name="user_id.unique" classname="user_id" time="0.000"/>
+        <testcase name="email.required" classname="email" time="0.000"/>
+        <testcase name="email.format.email" classname="email" time="0.000">
+            <failure message="3 rows failed (0.0002%)" type="format">3 rows failed (0.0002%)
+row 10442: &quot;bob@@example&quot;
+row 88310: &quot;alice@&quot;
+row 990004: &quot;not-an-email&quot;</failure>
+        </testcase>
+        <testcase name="email.length" classname="email" time="0.000"/>
+        <testcase name="age.min" classname="age" time="0.000">
+            <failure message="min observed: 11" type="min">min observed: 11
+512 rows failed (0.04%)</failure>
+        </testcase>
+        <testcase name="age.max" classname="age" time="0.000"/>
+        <testcase name="country.length" classname="country" time="0.000"/>
+        <testcase name="country.regex" classname="country" time="0.000"/>
+        <testcase name="plan.enum" classname="plan" time="0.000"/>
+        <testcase name="signed_up.required" classname="signed_up" time="0.000"/>
+        <testcase name="dataset.row_count_min" classname="dataset" time="0.000"/>
+        <testcase name="dataset.null_ratio_max.age" classname="dataset" time="0.000"/>
+        <testcase name="dataset.freshness.signed_up" classname="signed_up" time="0.000">
+            <skipped message="[warn] newest row is 51h old" type="freshness">newest row is 51h old</skipped>
+        </testcase>
+    </testsuite>
+</testsuites>

@@ -1,0 +1,34 @@
+[package]
+name = "plexuspact-engine"
+description = "Check planning and execution: streaming aggregates, stateful checks, whole-frame expressions"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+plexuspact-contract = { workspace = true }
+plexuspact-io = { workspace = true }
+polars = { workspace = true }
+thiserror = { workspace = true }
+regex = { workspace = true }
+ahash = { workspace = true }
+chrono = { workspace = true }
+humantime = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+url = { workspace = true }
+
+[dev-dependencies]
+insta = { workspace = true }
+proptest = { workspace = true }
+criterion = { workspace = true }
+
+[[bench]]
+name = "engine"
+harness = false
+
+[lints]
+workspace = true

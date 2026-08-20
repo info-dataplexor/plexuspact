@@ -1,0 +1,8 @@
+---
+source: crates/plexuspact-report/tests/human_tests.rs
+expression: out
+---
+✗ clickstream — 1 of 2 checks failed (123,456,789 rows in 754.3s)
+
+  ✗ session_id · not_empty_string    1,234,567 rows failed (1%)
+      row 1000001: ""

@@ -1,0 +1,40 @@
+//! # plexuspact-contract
+//!
+//! Data contract model: parsing, semantic validation, diffing, and JSON
+//! Schema generation for `contract.yaml`.
+//!
+//! ## Layering rule (ADR-002)
+//!
+//! This crate depends on **nothing internal** and must never depend on
+//! Polars. Checks here are *declarative descriptions*; only
+//! `plexuspact-engine` knows how to execute them. Keep `Cargo.toml` free of
+//! any DataFrame dependency — that boundary is what makes Python bindings and
+//! the Phase 2 agent possible without a rewrite.
+//!
+//! ## Modules
+//!
+//! * [`model`] — the typed contract ([`Contract`], [`ColumnCheck`], …) with
+//!   dual-form serde (`unique` bare strings and `{ min: 18 }` maps).
+//! * [`parse`] — [`parse_str`]/[`parse_file`] with miette span diagnostics.
+//! * [`validate`] — semantic lint after parse; returns **all** findings.
+//! * [`diff`](mod@diff) — semantic diff classifying changes as
+//!   breaking / non-breaking / cosmetic.
+//! * [`schema`] — JSON Schema generation for editor autocomplete.
+
+pub mod diff;
+pub mod export;
+pub mod model;
+pub mod parse;
+pub mod schema;
+mod suggest;
+pub mod validate;
+
+pub use diff::{diff, Change, Impact};
+pub use export::{databricks_dlt, DltLang};
+pub use model::{
+    ApiVersion, ColType, ColumnCheck, ColumnDef, Consumer, Contract, DataClass, DatasetCheck,
+    EnumValue, KnownFormat, LengthRange, LengthSpec, Number, PiiKind, Settings, Severity,
+};
+pub use parse::{parse_file, parse_str, InvalidContract, ParseError};
+pub use schema::json_schema;
+pub use validate::{validate, LintError, LintLevel};

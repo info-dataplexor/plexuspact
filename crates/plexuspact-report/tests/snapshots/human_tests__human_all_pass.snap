@@ -1,0 +1,5 @@
+---
+source: crates/plexuspact-report/tests/human_tests.rs
+expression: out
+---
+✓ user_signups — all 5 checks passed (1,204,441 rows in 6.2s)

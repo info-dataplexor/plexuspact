@@ -1,0 +1,13 @@
+---
+source: crates/plexuspact-report/tests/human_tests.rs
+expression: out
+---
+✗ user_signups — 3 of 14 checks failed (1,204,441 rows in 6.2s)
+
+  ✗ email · format: email          3 rows failed (0.0002%)
+      row 10442: "bob@@example"
+      row 88310: "alice@"
+      row 990004: "not-an-email"
+  ✗ age · min: 18                  512 rows failed (0.04%)
+      min observed: 11
+  ⚠ signed_up · freshness ≤ 48h    newest row is 51h old   [warn]

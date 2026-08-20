@@ -1,0 +1,15 @@
+---
+source: crates/plexuspact-contract/tests/error_snapshots.rs
+expression: "render(\"apiVersion: v1\\ndataset: t\\ncolumns:\\n  age: { type: int, checks: [{ min: 18, max: 99 }] }\\n\")"
+---
+plexuspact::contract::parse
+
+  × a check map must contain exactly one check key, found `min` and `max`;
+  │ write them as separate list items: `[{ min: … }, { max: … }]` (at
+  │ `columns.age.checks[0]`)
+   ╭─[contract.yaml:4:30]
+ 3 │ columns:
+ 4 │   age: { type: int, checks: [{ min: 18, max: 99 }] }
+   ·                              ┬
+   ·                              ╰── invalid check
+   ╰────

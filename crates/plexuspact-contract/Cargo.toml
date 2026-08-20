@@ -1,0 +1,31 @@
+[package]
+name = "plexuspact-contract"
+description = "Data contract model, parsing, validation, semantic diff, and JSON Schema (no engine dependencies)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_yaml = { workspace = true }
+serde_json = { workspace = true }
+schemars = { workspace = true, features = ["indexmap2"] }
+indexmap = { workspace = true }
+thiserror = { workspace = true }
+miette = { workspace = true }
+regex = { workspace = true }
+humantime = { workspace = true }
+
+[dev-dependencies]
+insta = { workspace = true }
+proptest = { workspace = true }
+# Graphical (span-labeled) rendering of diagnostics in snapshot tests only.
+miette = { workspace = true, features = ["fancy-no-backtrace"] }
+# Real JSON Schema validation of the canonical contract against the generated schema.
+jsonschema = { version = "0.26", default-features = false }
+
+[lints]
+workspace = true

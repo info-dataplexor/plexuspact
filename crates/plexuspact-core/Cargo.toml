@@ -1,0 +1,27 @@
+[package]
+name = "plexuspact-core"
+description = "Orchestration: RunRequest -> RunResult, profiling for init. Library-safe (no printing, no process::exit)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+plexuspact-contract = { workspace = true }
+plexuspact-io = { workspace = true }
+plexuspact-engine = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+chrono = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+
+[dev-dependencies]
+insta = { workspace = true }
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

@@ -1,0 +1,14 @@
+---
+source: crates/plexuspact-contract/tests/error_snapshots.rs
+expression: "render(\"apiVersion: v1\\ndataset: t\\ncolumns:\\n  id: { typ: string }\\n\")"
+---
+plexuspact::contract::parse
+
+  × unknown key `typ` — did you mean `type`? (at `columns.id`)
+   ╭─[contract.yaml:4:9]
+ 3 │ columns:
+ 4 │   id: { typ: string }
+   ·         ─┬─
+   ·          ╰── unrecognized key
+   ╰────
+  help: valid keys here are: type, required, pii, classification, checks

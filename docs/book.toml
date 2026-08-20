@@ -1,0 +1,14 @@
+[book]
+title = "PlexusPact Documentation"
+description = "Shift-left data contract validation: a single Rust binary that checks datasets against versioned YAML contracts."
+authors = ["PlexusPact contributors"]
+language = "en"
+src = "src"
+
+[output.html]
+git-repository-url = "https://github.com/dataplexor/plexuspact"
+edit-url-template = "https://github.com/dataplexor/plexuspact/edit/main/docs/{path}"
+site-url = "/plexuspact/"
+
+[output.html.search]
+enable = true
