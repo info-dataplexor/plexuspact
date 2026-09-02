@@ -25,7 +25,45 @@ jobs:
 
 Inputs, outputs, and non-blocking mode are documented in the [action README](https://github.com/dataplexor/plexuspact/blob/main/action/README.md).
 
-Gate contract *changes* too — in the repo that owns the contract:
+Add `api-key: ${{ secrets.PLEXUSPACT_API_KEY }}` and every run this workflow
+produces is [kept as history](cloud.md), with the run's URL surfaced as a workflow
+notice. Nothing else changes; the gate still passes or fails on the data alone.
+
+### Gate contract changes, not just data
+
+Comparing two files in the working copy answers a question the author already
+knows the answer to — they wrote both files. The question a pull request
+actually raises is different: *what is in force right now, and who breaks if
+this lands?* Only the registry can answer that, because only the registry knows
+which version suppliers are being judged against today and who has declared they
+read the dataset.
+
+```yaml
+name: contract
+on: [pull_request]
+
+permissions:
+  contents: read
+  pull-requests: write     # to leave the summary on the PR
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dataplexor/plexuspact/action/preflight@v0.1.0
+        with:
+          contract: contracts/user_signups.yaml
+          api-key: ${{ secrets.PLEXUSPACT_API_KEY }}
+```
+
+It comments on the pull request with what changes and who breaks, annotates the
+contract file, and fails the job when the change tightens terms somebody relies
+on. It writes nothing to the registry: a contract that has not been merged has
+not been agreed.
+
+Without a key — or in a repo that does not use the cloud — the local form still
+catches a tightening against the base branch:
 
 ```yaml
       - name: Block breaking contract changes
@@ -33,6 +71,39 @@ Gate contract *changes* too — in the repo that owns the contract:
           git show origin/main:contracts/user_signups.yaml > /tmp/old.yaml
           plexuspact diff /tmp/old.yaml contracts/user_signups.yaml
 ```
+
+### Register on merge, with the pull request attached
+
+An API key is one account, not one person. A contract pushed from CI otherwise
+arrives from nowhere — the record says a machine did it and stops. The merge job
+is the only place that knows the pull request the change was actually agreed in,
+so it passes the link, and the registry keeps it on the version *and* in the
+audit trail.
+
+```yaml
+name: contract-register
+on:
+  push:
+    branches: [main]
+    paths: ["contracts/**"]
+
+jobs:
+  register:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dataplexor/plexuspact/action/register@v0.1.0
+        with:
+          contract: contracts/user_signups.yaml
+          api-key: ${{ secrets.PLEXUSPACT_API_KEY }}
+```
+
+The pull request URL and the short commit SHA are worked out from the event; set
+`source-url` and `version-label` yourself to override either. If the project
+requires a second person to approve a tightening, the version is recorded as
+*proposed* and the one in force keeps applying — that is a working project, not
+a failed job, so the step still passes. Set `fail-if-pending: "true"` if you
+want the merge to go red until somebody approves.
 
 ## GitLab CI
 
@@ -63,6 +134,51 @@ data-contract:
 ```
 
 The musl binary runs on any Linux image, including Alpine.
+
+### Contract preflight on a merge request
+
+The same shift-left gate, as an includable template — it verifies the download's
+checksum, asks the registry what would change and who breaks, and leaves one
+note on the merge request that it updates on every push rather than adding a new
+one each time:
+
+```yaml
+include:
+  - remote: "https://raw.githubusercontent.com/dataplexor/plexuspact/v0.1.0/ci/gitlab/plexuspact-preflight.yml"
+
+plexuspact:preflight:
+  variables:
+    PLEXUSPACT_CONTRACT: contracts/user_signups.yaml
+```
+
+`PLEXUSPACT_API_KEY` goes in the project's CI/CD settings as a masked, protected
+variable. The note needs a project access token with the `api` scope in
+`PLEXUSPACT_GITLAB_TOKEN`; without it the job still gates, it just has nowhere
+to leave the summary.
+
+## Azure Pipelines
+
+```yaml
+resources:
+  repositories:
+    - repository: plexuspact
+      type: github
+      name: dataplexor/plexuspact
+      ref: refs/tags/v0.1.0
+      endpoint: github
+
+steps:
+  - template: ci/azure/plexuspact-preflight.yml@plexuspact
+    parameters:
+      contract: contracts/user_signups.yaml
+      apiKey: $(PLEXUSPACT_API_KEY)
+```
+
+Azure does not map secret variables into the environment on its own, which is
+why the key is passed as a parameter and handed to the step as an env var rather
+than put on a command line where it would land in the log. The comment on the
+pull request needs the build service to have *Contribute to pull requests* on
+the repository.
 
 ## pre-commit hook
 

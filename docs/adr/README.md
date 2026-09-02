@@ -16,3 +16,4 @@ One page each: **Context / Decision / Consequences**. When you face a choice the
 | [010](010-reserved-schema-fields.md) | Reserved schema fields — `pii`, `classification`, `consumers` | Accepted |
 | 011 | Quarantine semantics (reserved — to be written before Phase 1.5 implementation) | — |
 | 012 | AI privacy & determinism boundary (reserved — to be written before Phase 1.5 implementation) | — |
+| [013](013-cloud-reporting-boundary.md) | Reporting a run to the cloud — the CLI carries its own bridge | Accepted (amends 006) |

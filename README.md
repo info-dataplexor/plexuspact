@@ -78,7 +78,7 @@ dataset: user_signups
 owner: growth-team@acme.com
 description: Daily signup export from the app database.
 consumers:
-  - { name: analytics-core, contact: data-team@acme.com }
+  - { name: analytics-core, contact: data-team@acme.com, reads: [user_id, plan] }
 
 columns:
   user_id:   { type: string, required: true, checks: [unique] }
@@ -170,6 +170,9 @@ plexuspact check <path|-> --contract <file>         # validate (file or stdin)
     [--strict] [--sample-failures N]
 plexuspact diff <old.yaml> <new.yaml>                # classify contract changes (exit 1 on breaking)
 plexuspact validate-contract <file>                  # lint a contract without data
+plexuspact push <result.json|->                      # report a saved result to PlexusPact Cloud
+
+# Global: --offline (never open a socket), -v/-vv (logs to stderr)
 ```
 
 Inputs: CSV (delimiter/quote/encoding options), Parquet, NDJSON, JSON array — from a file or stdin, with transparent gzip/zstd decompression.
@@ -183,7 +186,8 @@ Measured with the repo's Criterion bench (`cargo bench -p plexuspact-engine`) on
 - [Introduction](docs/src/introduction.md) · [Installation](docs/src/installation.md) · [5-minute quickstart](docs/src/quickstart.md)
 - [Contract reference](docs/src/contract-reference.md) — every field, every check
 - [CI recipes](docs/src/ci-recipes.md) · [Exit codes](docs/src/exit-codes.md) · [JSON result schema](docs/src/result-schema.md)
-- [Telemetry policy](docs/src/telemetry.md) · [FAQ](docs/src/faq.md)
+- [Keeping a history](docs/src/cloud.md) — reporting runs to PlexusPact Cloud
+- [Telemetry and network policy](docs/src/telemetry.md) · [FAQ](docs/src/faq.md)
 - [Architecture decision records](docs/adr/)
 
 Build the book locally with [mdBook](https://rust-lang.github.io/mdBook/): `mdbook serve docs`.
@@ -200,7 +204,7 @@ Build the book locally with [mdBook](https://rust-lang.github.io/mdBook/): `mdbo
 
 The CLI — every check, every output format, `init`, `diff`, quarantine when it ships — is **Apache-2.0, free forever**. Single-developer productivity is never paywalled.
 
-The commercial product is the hosted **Schema Registry** (separate codebase): contract history, drift charts, alerting, blast-radius lineage, and compliance evidence for teams. The CLI works fully offline and never requires an account. `pii`, `classification`, and `consumers` fields exist in the v1 contract schema today so your committed contracts are ready for those features later — in Phase 1 they are parsed, validated, and echoed into reports, nothing more.
+The commercial product is **PlexusPact Cloud** (separate codebase): contract history, drift charts, alerting, blast-radius lineage, and compliance evidence for teams. The CLI never requires an account — with no `PLEXUSPACT_API_KEY` set it opens no sockets at all, and `--offline` guarantees that whatever else is configured. Set a key and `check` [reports each result](docs/src/cloud.md) to your project on its own; there is no glue to write, and the exit code stays the data's alone. `consumers` is what blast radius reads: name the teams that depend on a dataset and the columns each one `reads`, and the cloud can tell you who breaks before you approve a tightening. The CLI's own verdict is untouched by it — `check` ignores consumers entirely. The `pii` and `classification` fields are still reserved: parsed, validated, and echoed into reports, nothing more, so your committed contracts are ready for compliance reporting later.
 
 ## Contributing
 

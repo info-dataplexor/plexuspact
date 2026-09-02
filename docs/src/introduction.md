@@ -15,14 +15,15 @@ Bad code is blocked by a failing CI build. Bad data should be blocked the same w
 - **Zero-boilerplate** where heavy Python frameworks are verbose: one YAML file, no notebooks, no plugin classes, no config sprawl.
 - **Compiled-fast** where Python is slow: single static binary, no runtime dependencies, cold start under 50 ms.
 - **Streaming and out-of-core** where Pandas hits OOM: a 10 GB CSV validates in constant memory on a 4 GB machine.
-- **Deterministic**: same input, same contract, same result — the check path performs no network I/O ever.
+- **Deterministic**: same input, same contract, same result — the validation engine has no network client, so nothing outside your machine can change a verdict.
 
 ## What's in the box (Phase 1)
 
 - `plexuspact check` — validate a file or stdin; human, JSON, JUnit, and self-contained HTML report output.
 - `plexuspact init` — profile a dataset and draft a contract with inferred types and conservative commented suggestions.
-- `plexuspact diff` — classify contract changes as breaking / non-breaking / cosmetic.
+- `plexuspact diff` — classify contract changes as breaking / semantic / non-breaking / cosmetic.
 - `plexuspact validate-contract` — lint a contract without any data.
+- `plexuspact push` — report a result to PlexusPact Cloud, if you want the runs [kept as history](cloud.md). `check` does it for itself once a key is set; without one, nothing leaves the machine.
 - The [20-check core library](contract-reference.md#the-check-library): schema, value, and dataset-level checks with per-check `error`/`warn` severity.
 - An [official GitHub Action](ci-recipes.md#github-actions) with PR annotations.
 

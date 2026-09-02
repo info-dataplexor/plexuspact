@@ -104,6 +104,7 @@ Column, rule, observed value, row number. The producer who broke it can fix it w
 ## Where next
 
 - Ship it to CI: [CI recipes](ci-recipes.md) — the GitHub Action takes four lines.
+- Keep the results instead of watching them scroll past: [reporting runs to PlexusPact Cloud](cloud.md) is one environment variable.
 - Add a shareable report: `--report report.html` (self-contained, mail it to a vendor).
 - Machine-readable results: `--format json` ([schema](result-schema.md)).
 - Learn every field and all 20 checks: [contract reference](contract-reference.md).

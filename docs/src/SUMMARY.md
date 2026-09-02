@@ -16,10 +16,11 @@
 # Guides
 
 - [CI recipes](ci-recipes.md)
+- [Keeping a history: reporting runs to PlexusPact Cloud](cloud.md)
 - [Integrations: quality signals to dbt / Databricks / OpenLineage](integrations.md)
 - [Public-API capability & reliability benchmark](public-api-benchmark.md)
 
 # Project
 
-- [Telemetry policy](telemetry.md)
+- [Telemetry and network policy](telemetry.md)
 - [FAQ](faq.md)

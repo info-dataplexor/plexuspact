@@ -12,7 +12,9 @@ The CLI — every check, every output format, `init`, `diff`, and quarantine whe
 
 ### Does `plexuspact check` send my data anywhere?
 
-No. The check path performs no network I/O, architecturally. See the [telemetry policy](telemetry.md) — the current release contains no telemetry code at all, and `--offline` guarantees zero sockets.
+Not unless you ask it to, and asking takes a deliberate step: setting `PLEXUSPACT_API_KEY` to a PlexusPact Cloud project key. Then — and only then — each result is [reported to that project](cloud.md), which prints `✓ reported run to …` on stderr every time. With no key set, nothing leaves the machine.
+
+There is no telemetry of any kind, and the validation engine has no network client at all. `--offline` (or `PLEXUSPACT_NO_NETWORK`) guarantees zero sockets regardless of what else is configured. See the [telemetry and network policy](telemetry.md).
 
 ### What platforms are supported?
 
@@ -42,9 +44,13 @@ No. A type mismatch is itself a reported check failure (per `settings.on_type_mi
 
 Start with `plexuspact init data.csv` — it profiles the data and drafts typed columns plus conservative, commented suggestions that the profiled data already passes. Phase 1.5 adds `init --ai` for semantic suggestions (opt-in, bring your own key or local model).
 
-### What are the `pii`, `classification`, and `consumers` fields for? They don't seem to do anything.
+### What are the `pii` and `classification` fields for? They don't seem to do anything.
 
-Correct — in Phase 1 they are parsed, validated, and echoed into reports, nothing more. They're reserved in the v1 schema because contract schemas are painful to change once committed across many repos, and Phase 2 features (blast radius, compliance evidence) anchor on them. Tag PII now, benefit later. See [ADR-010](https://github.com/dataplexor/plexuspact/blob/main/docs/adr/010-reserved-schema-fields.md).
+Correct — they are parsed, validated, and echoed into reports, nothing more. They're reserved in the v1 schema because contract schemas are painful to change once committed across many repos, and compliance-evidence reporting anchors on them. Tag PII now, benefit later. See [ADR-010](https://github.com/dataplexor/plexuspact/blob/main/docs/adr/010-reserved-schema-fields.md).
+
+### And `consumers`?
+
+That one does something now. Naming a consumer, and optionally the columns it `reads`, is what lets a tool answer *who breaks* — which teams are downstream of a dropped column or a failing check, and who to contact. `plexuspact check` still ignores it entirely (a consumer changes no verdict, so your exit code is unaffected), but the list is echoed into the result and PlexusPact Cloud reads it on the review screen, on a failing run, and in change alerts. See [consumers](contract-reference.md#consumers).
 
 ### A check I need is missing.
 
@@ -52,7 +58,7 @@ First try `custom_expr` — any Polars boolean expression. If that's awkward, [f
 
 ### How do I stop someone weakening the contract to make CI pass?
 
-Run `plexuspact diff` in the contract repo's CI: it classifies changes as breaking / non-breaking / cosmetic and exits 1 on breaking. Combine with CODEOWNERS on the contract files so consumers review changes.
+Run `plexuspact diff` in the contract repo's CI: it classifies changes as breaking / semantic / non-breaking / cosmetic and exits 1 on breaking. Combine with CODEOWNERS on the contract files so consumers review changes. Read the semantic ones — a column whose meaning moved fails nothing and quietly falsifies every dashboard built on the old meaning.
 
 ## CI & operations
 

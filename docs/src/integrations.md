@@ -28,12 +28,20 @@ already hold (`human`/`json`/`junit`/`html`), extended outward.
 ## Where each integration lives (open-core boundary)
 
 The boundary follows one rule: **anything that is a pure, offline format
-transform ships in the OSS CLI; anything that holds credentials, retries, or
+transform ships in the OSS CLI; anything that *stores* credentials, retries, or
 persistent configuration lives in the proprietary control plane.**
+
+One integration sits deliberately on the line and is worth naming: the CLI can
+[report its own result](cloud.md) to a cloud project. It reads a single token
+from the environment, sends to a single address, stores nothing, and retries
+nothing — that is what keeps it on the OSS side. The moment a signal needs to be
+*routed* — several destinations, stored webhook secrets, backoff, per-workspace
+rules — it belongs to the control plane.
 
 | Integration | Home | Why |
 |---|---|---|
 | Exit codes + JUnit XML + GitHub Action | **OSS** | Offline, deterministic; the CI gate is the core promise |
+| **Reporting a run to a cloud project** | **OSS** | One token from the environment, one address, nothing stored; opt-in and suppressible with `--offline` |
 | **OpenLineage event emission** | **OSS** | Pure `RunResult → JSON` transform, no secrets |
 | dbt source/test generation | **OSS** | Pure `contract → YAML` transform |
 | **Databricks DLT expectation generation** | **OSS** | Pure `contract → SQL/Python` transform |
