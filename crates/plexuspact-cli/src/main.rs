@@ -6,6 +6,9 @@
 mod cli;
 mod commands;
 mod exit;
+mod preflight;
+mod push;
+mod register;
 
 use std::process::ExitCode;
 

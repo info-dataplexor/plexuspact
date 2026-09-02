@@ -10,12 +10,23 @@
 //! | check added at `error` severity, check tightened, severity warn→error | Breaking |
 //! | `columns_exact` enabled, `allow_extra_columns` disabled, `on_type_mismatch` warn→error | Breaking |
 //! | dataset renamed | Breaking |
+//! | a column's or the dataset's written definition redefined or withdrawn | Semantic |
+//! | a column's `stability` weakened, a `sunset` date set | Semantic |
+//! | a `sunset` or migration window brought forward | Breaking |
+//! | a personal-data tag added, changed or withdrawn; a handling level changed or withdrawn | Semantic |
 //! | optional column added, check removed/loosened, severity error→warn, new warn check, `required` removed | NonBreaking |
-//! | owner/description/version/consumers/pii/classification edits | Cosmetic |
+//! | owner/version/consumers edits, a definition, handling level or `pii: none` written down for the first time | Cosmetic |
+//!
+//! The semantic tier exists because the classification above used to have a
+//! hole in it. "`amount` now means net of refunds" changes no check, fails no
+//! delivery and moves no data — and silently breaks every dashboard built on
+//! the old meaning. Filed as cosmetic it reached nobody; filed as breaking it
+//! would have stopped pipelines that are, mechanically, fine. It is its own
+//! kind of change: nothing executes differently, and the agreement changed.
 
 use std::fmt;
 
-use crate::model::{ColumnCheck, ColumnDef, Contract, DatasetCheck, Severity};
+use crate::model::{ColumnCheck, ColumnDef, Contract, DatasetCheck, PiiKind, Severity, Stability};
 
 /// How a change affects downstream consumers of the data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -23,10 +34,18 @@ pub enum Impact {
     /// Data that passed the old contract may fail the new one (or consumers
     /// may lose a column/type they relied on).
     Breaking,
+    /// The *meaning* changed while the mechanics did not.
+    ///
+    /// Ranked second, above `NonBreaking`, and deliberately: a redefinition is
+    /// the one change that never announces itself. A tightened check fails a
+    /// delivery and somebody investigates within the hour. "`amount` now means
+    /// net of refunds" passes every check ever written and quietly falsifies
+    /// every number built on the old meaning, for as long as nobody notices.
+    Semantic,
     /// The contract got looser or gained warn-level reporting; passing data
     /// keeps passing.
     NonBreaking,
-    /// Metadata only; validation behavior is unchanged.
+    /// Metadata only; neither validation behavior nor meaning is changed.
     Cosmetic,
 }
 
@@ -34,6 +53,7 @@ impl fmt::Display for Impact {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Impact::Breaking => f.write_str("breaking"),
+            Impact::Semantic => f.write_str("semantic"),
             Impact::NonBreaking => f.write_str("non-breaking"),
             Impact::Cosmetic => f.write_str("cosmetic"),
         }
@@ -89,7 +109,13 @@ pub fn diff(old: &Contract, new: &Contract) -> Vec<Change> {
         });
     }
     push_cosmetic_opt(&mut out, "owner", &old.owner, &new.owner);
-    push_cosmetic_opt(&mut out, "description", &old.description, &new.description);
+    push_definition(
+        &mut out,
+        "description",
+        "the dataset's written definition",
+        &old.description,
+        &new.description,
+    );
     push_cosmetic_opt(&mut out, "version", &old.version, &new.version);
     if old.consumers != new.consumers {
         out.push(Change {
@@ -98,6 +124,8 @@ pub fn diff(old: &Contract, new: &Contract) -> Vec<Change> {
             description: "consumers list changed".into(),
         });
     }
+
+    diff_migration(old, new, &mut out);
 
     diff_columns(old, new, &mut out);
     diff_dataset_checks(old, new, &mut out);
@@ -128,14 +156,64 @@ fn push_cosmetic_opt(
     }
 }
 
+/// Records a change to a written definition, at the tier it deserves.
+///
+/// Three cases, and they are genuinely different. Writing a definition down for
+/// the first time changes nothing that was ever agreed — the meaning was always
+/// whatever it was, and now it is on paper: cosmetic. *Changing* one is a
+/// redefinition, which is the whole reason the semantic tier exists. *Removing*
+/// one withdraws the shared meaning without replacing it, which leaves every
+/// consumer holding an assumption nobody is standing behind any more — so it is
+/// filed the same way.
+fn push_definition(
+    out: &mut Vec<Change>,
+    path: &str,
+    subject: &str,
+    old: &Option<String>,
+    new: &Option<String>,
+) {
+    if old == new {
+        return;
+    }
+    let (impact, description) = match (old, new) {
+        (None, Some(_)) => (Impact::Cosmetic, format!("{subject} was written down")),
+        (Some(_), None) => (
+            Impact::Semantic,
+            format!("{subject} was removed — nobody is standing behind the old meaning now"),
+        ),
+        (Some(_), Some(_)) => (
+            Impact::Semantic,
+            format!("{subject} changed — the same values now mean something else"),
+        ),
+        (None, None) => return,
+    };
+    out.push(Change {
+        impact,
+        path: path.to_string(),
+        description,
+    });
+}
+
 /// Diffs the `columns` maps.
 fn diff_columns(old: &Contract, new: &Contract, out: &mut Vec<Change>) {
     for (name, old_col) in &old.columns {
         match new.columns.get(name) {
+            // Still breaking — the data is gone either way. But a removal that
+            // was announced months ago and one that arrived this morning are
+            // not the same event for the person reading the diff, and only one
+            // of them is a surprise.
             None => out.push(Change {
                 impact: Impact::Breaking,
                 path: format!("columns.{name}"),
-                description: format!("column `{name}` removed"),
+                description: match (old_col.stability, old_col.sunset.as_deref()) {
+                    (Stability::Deprecated, Some(date)) => format!(
+                        "column `{name}` removed — deprecated, and announced for removal after {date}"
+                    ),
+                    (Stability::Deprecated, None) => {
+                        format!("column `{name}` removed — deprecated, but no removal date was ever given")
+                    }
+                    _ => format!("column `{name}` removed"),
+                },
             }),
             Some(new_col) => diff_column(name, old_col, new_col, out),
         }
@@ -165,37 +243,226 @@ fn diff_column(name: &str, old: &ColumnDef, new: &ColumnDef, out: &mut Vec<Chang
         out.push(Change {
             impact: Impact::Breaking,
             path: format!("columns.{name}.type"),
-            description: format!("type changed from `{}` to `{}`", old.r#type, new.r#type),
+            description: format!(
+                "`{name}` changed type from `{}` to `{}`",
+                old.r#type, new.r#type
+            ),
         });
     }
     match (old.required, new.required) {
         (false, true) => out.push(Change {
             impact: Impact::Breaking,
             path: format!("columns.{name}.required"),
-            description: "column is now required (nulls become failures)".into(),
+            description: format!("`{name}` is now required — nulls become failures"),
         }),
         (true, false) => out.push(Change {
             impact: Impact::NonBreaking,
             path: format!("columns.{name}.required"),
-            description: "column is no longer required".into(),
+            description: format!("`{name}` is no longer required"),
         }),
         _ => {}
     }
+    push_definition(
+        out,
+        &format!("columns.{name}.description"),
+        &format!("the definition of `{name}`"),
+        &old.description,
+        &new.description,
+    );
+    // No check runs on either of these, which is exactly why they are not
+    // cosmetic: they are the fields that say what a consumer is *allowed to do*
+    // with the column. A column that quietly stops being tagged as personal
+    // data has not changed one byte and has changed everything.
     if old.pii != new.pii {
+        // `pii: none` is a statement, not silence: it says somebody looked at
+        // this column and it holds nothing personal. Reading it as "some kind
+        // of personal data" — which comparing the options alone does — turns
+        // that assurance into an alarm, and turns withdrawing the assurance
+        // into a clean bill of health.
+        let personal = |p: Option<PiiKind>| matches!(p, Some(k) if k != PiiKind::None);
+        let (impact, description) = match (personal(old.pii), personal(new.pii)) {
+            (false, true) => (
+                Impact::Semantic,
+                format!("`{name}` is now marked as personal data"),
+            ),
+            (true, true) => (
+                Impact::Semantic,
+                format!("the kind of personal data `{name}` holds changed"),
+            ),
+            (true, false) if new.pii.is_some() => (
+                Impact::Semantic,
+                format!(
+                    "`{name}` is no longer marked as personal data — it is now declared not to be"
+                ),
+            ),
+            (true, false) => (
+                Impact::Semantic,
+                format!("`{name}` no longer says whether it holds personal data"),
+            ),
+            // Neither side is personal, so the two are `none` and silence in
+            // one order or the other. Saying so is new information; taking it
+            // back leaves consumers holding an assurance nobody stands behind.
+            (false, false) if new.pii.is_some() => (
+                Impact::Cosmetic,
+                format!("`{name}` was written down as holding no personal data"),
+            ),
+            (false, false) => (
+                Impact::Semantic,
+                format!("`{name}` no longer says whether it holds personal data"),
+            ),
+        };
         out.push(Change {
-            impact: Impact::Cosmetic,
+            impact,
             path: format!("columns.{name}.pii"),
-            description: "pii tag changed (no engine behavior in v1)".into(),
+            description,
         });
     }
     if old.classification != new.classification {
+        // How a column must be handled is an instruction, and an instruction
+        // that does not say what it changed to is not one.
+        let change = match (old.classification, new.classification) {
+            (None, Some(c)) => Some((
+                Impact::Cosmetic,
+                format!("`{name}` was written down as {c}"),
+            )),
+            (Some(a), Some(b)) => Some((
+                Impact::Semantic,
+                format!("`{name}` must now be handled as {b}, not {a}"),
+            )),
+            (Some(a), None) => Some((
+                Impact::Semantic,
+                format!("`{name}` no longer says how it must be handled — it was {a}"),
+            )),
+            (None, None) => None,
+        };
+        if let Some((impact, description)) = change {
+            out.push(Change {
+                impact,
+                path: format!("columns.{name}.classification"),
+                description,
+            });
+        }
+    }
+    diff_stability(name, old, new, out);
+    diff_checks(name, &old.checks, &new.checks, out);
+}
+
+/// Diffs the promise attached to a column: how stable it is, and until when.
+///
+/// The direction is the whole story. Weakening a promise is a change every
+/// consumer has to read — nothing fails, nothing moves, and what they were
+/// entitled to rely on got smaller. Strengthening one needs no ceremony.
+///
+/// The exception is a `sunset` date that moves *closer*. That is not a weaker
+/// promise, it is a shorter deadline: work that was scheduled against the old
+/// date is now late. Which is what breaking means, so that is what it is filed
+/// as — the one place in this file where a metadata field can break something.
+fn diff_stability(name: &str, old: &ColumnDef, new: &ColumnDef, out: &mut Vec<Change>) {
+    use std::cmp::Ordering;
+    match new.stability.promises_more_than(old.stability) {
+        Ordering::Less => out.push(Change {
+            impact: Impact::Semantic,
+            path: format!("columns.{name}.stability"),
+            description: format!(
+                "`{name}` is now {} — it was {}, and you may rely on it less than you could",
+                new.stability, old.stability
+            ),
+        }),
+        Ordering::Greater => out.push(Change {
+            impact: Impact::NonBreaking,
+            path: format!("columns.{name}.stability"),
+            description: format!(
+                "`{name}` is now {} — a stronger promise than {}",
+                new.stability, old.stability
+            ),
+        }),
+        Ordering::Equal => {}
+    }
+
+    // ISO-8601 sorts lexicographically, which is the entire reason the date is
+    // held as a string: no clock is needed to tell nearer from further.
+    let change = match (old.sunset.as_deref(), new.sunset.as_deref()) {
+        (None, None) => None,
+        (None, Some(d)) => Some((
+            Impact::Semantic,
+            format!("`{name}` will be removed after {d}"),
+        )),
+        (Some(d), None) => Some((
+            Impact::NonBreaking,
+            format!("`{name}` is no longer scheduled for removal (it was {d})"),
+        )),
+        (Some(a), Some(b)) if a == b => None,
+        (Some(a), Some(b)) if b < a => Some((
+            Impact::Breaking,
+            format!("`{name}` will now be removed after {b}, not {a} — anyone who planned against the old date is late"),
+        )),
+        (Some(a), Some(b)) => Some((
+            Impact::NonBreaking,
+            format!("`{name}` now survives until {b}, not {a}"),
+        )),
+    };
+    if let Some((impact, description)) = change {
         out.push(Change {
-            impact: Impact::Cosmetic,
-            path: format!("columns.{name}.classification"),
-            description: "classification changed (no engine behavior in v1)".into(),
+            impact,
+            path: format!("columns.{name}.sunset"),
+            description,
         });
     }
-    diff_checks(name, &old.checks, &new.checks, out);
+}
+
+/// Diffs the migration window.
+///
+/// Written to be quiet on purpose. The block describes the version it is
+/// attached to, and is expected to be dropped once its window closes, so a
+/// later version losing it is bookkeeping rather than news. Two things are not:
+/// a deadline that moved closer, which shortens time somebody had already
+/// planned against, and the note, which is the instructions consumers are
+/// following.
+fn diff_migration(old: &Contract, new: &Contract, out: &mut Vec<Change>) {
+    match (old.migration.as_ref(), new.migration.as_ref()) {
+        (None, None) => {}
+        (None, Some(m)) => out.push(Change {
+            impact: Impact::NonBreaking,
+            path: "migration".into(),
+            description: format!("a migration window was declared, ending {}", m.window_ends),
+        }),
+        (Some(m), None) => out.push(Change {
+            impact: Impact::Cosmetic,
+            path: "migration".into(),
+            description: format!(
+                "the migration window that ended {} was removed",
+                m.window_ends
+            ),
+        }),
+        (Some(a), Some(b)) => {
+            if b.window_ends < a.window_ends {
+                out.push(Change {
+                    impact: Impact::Breaking,
+                    path: "migration.window_ends".into(),
+                    description: format!(
+                        "the migration deadline moved forward from {} to {} — work planned against the old date is late",
+                        a.window_ends, b.window_ends
+                    ),
+                });
+            } else if b.window_ends > a.window_ends {
+                out.push(Change {
+                    impact: Impact::NonBreaking,
+                    path: "migration.window_ends".into(),
+                    description: format!(
+                        "the migration deadline moved out from {} to {}",
+                        a.window_ends, b.window_ends
+                    ),
+                });
+            }
+            if a.note != b.note {
+                out.push(Change {
+                    impact: Impact::Cosmetic,
+                    path: "migration.note".into(),
+                    description: "the migration instructions changed".into(),
+                });
+            }
+        }
+    }
 }
 
 /// Diffs the check lists of one column, kind by kind.
@@ -211,7 +478,7 @@ fn diff_checks(column: &str, old: &[ColumnCheck], new: &[ColumnCheck], out: &mut
         let olds: Vec<&ColumnCheck> = old.iter().filter(|c| c.kind_name() == kind).collect();
         let news: Vec<&ColumnCheck> = new.iter().filter(|c| c.kind_name() == kind).collect();
         if let ([o], [n]) = (olds.as_slice(), news.as_slice()) {
-            if let Some(change) = compare_check_pair(&path, o, n) {
+            if let Some(change) = compare_check_pair(&path, o, n, Some(column)) {
                 out.push(change);
             }
             continue;
@@ -222,36 +489,42 @@ fn diff_checks(column: &str, old: &[ColumnCheck], new: &[ColumnCheck], out: &mut
                 out.push(Change {
                     impact: Impact::NonBreaking,
                     path: path.clone(),
-                    description: format!("`{kind}` check removed"),
+                    description: format!("`{kind}` check removed from `{column}`"),
                 });
             }
         }
         for n in &news {
             if !olds.contains(n) {
-                out.push(added_check(&path, kind, n.severity()));
+                out.push(added_check(&path, kind, n.severity(), Some(column)));
             }
         }
     }
 }
 
 /// A `Change` for a newly added check, classified by its severity.
-fn added_check(path: &str, kind: &str, severity: Severity) -> Change {
+fn added_check(path: &str, kind: &str, severity: Severity, on: Option<&str>) -> Change {
+    let onto = on.map(|c| format!(" to `{c}`")).unwrap_or_default();
     match severity {
         Severity::Error => Change {
             impact: Impact::Breaking,
             path: path.to_string(),
-            description: format!("`{kind}` check added at error severity"),
+            description: format!("`{kind}` check added{onto} at error severity"),
         },
         Severity::Warn => Change {
             impact: Impact::NonBreaking,
             path: path.to_string(),
-            description: format!("`{kind}` check added at warn severity"),
+            description: format!("`{kind}` check added{onto} at warn severity"),
         },
     }
 }
 
 /// Compares a single old/new check of the same kind.
-fn compare_check_pair(path: &str, old: &ColumnCheck, new: &ColumnCheck) -> Option<Change> {
+fn compare_check_pair(
+    path: &str,
+    old: &ColumnCheck,
+    new: &ColumnCheck,
+    on: Option<&str>,
+) -> Option<Change> {
     if old == new {
         return None;
     }
@@ -263,6 +536,7 @@ fn compare_check_pair(path: &str, old: &ColumnCheck, new: &ColumnCheck) -> Optio
         detail,
         old.severity(),
         new.severity(),
+        on,
     ))
 }
 
@@ -275,16 +549,22 @@ fn classify_pair(
     detail: String,
     old_sev: Severity,
     new_sev: Severity,
+    on: Option<&str>,
 ) -> Change {
     let severity_note = match (old_sev, new_sev) {
         (Severity::Error, Severity::Warn) => "; severity relaxed error → warn",
         (Severity::Warn, Severity::Error) => "; severity escalated warn → error",
         _ => "",
     };
-    let description = if detail.is_empty() {
-        format!("`{kind}` check severity changed{severity_note}")
-    } else {
-        format!("{detail}{severity_note}")
+    // A parameter that moved is a statement about the column it guards, and
+    // "min raised from 5 to 10" is a fact about nothing until it says whose
+    // minimum moved. At dataset scope there is no column to name, and the
+    // sentence is already about the whole table.
+    let description = match (detail.is_empty(), on) {
+        (true, Some(c)) => format!("`{kind}` check severity changed on `{c}`{severity_note}"),
+        (true, None) => format!("`{kind}` check severity changed{severity_note}"),
+        (false, Some(c)) => format!("`{c}`: {detail}{severity_note}"),
+        (false, None) => format!("{detail}{severity_note}"),
     };
     // Escalating warn → error is breaking regardless of parameters: failures
     // that used to be warnings now fail the run.
@@ -575,6 +855,7 @@ fn diff_dataset_checks(old: &Contract, new: &Contract, out: &mut Vec<Change>) {
                     detail,
                     o.severity(),
                     n.severity(),
+                    None,
                 ));
             }
             continue;
@@ -590,7 +871,7 @@ fn diff_dataset_checks(old: &Contract, new: &Contract, out: &mut Vec<Change>) {
         }
         for n in &news {
             if !olds.contains(n) {
-                out.push(added_check(&path, n.kind_name(), n.severity()));
+                out.push(added_check(&path, n.kind_name(), n.severity(), None));
             }
         }
     }
@@ -682,19 +963,19 @@ mod tests {
                 "[]",
                 "[{ min: 18 }]",
                 Impact::Breaking,
-                "added at error severity",
+                "added to `age` at error severity",
             ),
             (
                 "[]",
                 "[{ min: 18, severity: warn }]",
                 Impact::NonBreaking,
-                "added at warn severity",
+                "added to `age` at warn severity",
             ),
             (
                 "[]",
                 "[unique]",
                 Impact::Breaking,
-                "added at error severity",
+                "added to `age` at error severity",
             ),
             // Removed ⇒ NonBreaking.
             ("[{ min: 18 }]", "[]", Impact::NonBreaking, "removed"),
@@ -928,14 +1209,226 @@ mod tests {
     }
 
     #[test]
-    fn pii_and_classification_are_cosmetic() {
+    fn a_handling_tag_is_semantic_not_cosmetic() {
+        // No check runs on `pii` or `classification`, which is exactly why they
+        // are not cosmetic: they say what a consumer is allowed to do with the
+        // column. A column that quietly stops being tagged as personal data has
+        // not changed one byte and has changed everything.
         let old = contract(BASE);
         let new = contract(
-            "apiVersion: v1\ndataset: t\ncolumns:\n  id: { type: string, pii: email, classification: internal }\n",
+            "apiVersion: v1
+dataset: t
+columns:
+  id: { type: string, pii: email, classification: internal }
+",
         );
         let changes = diff(&old, &new);
         assert_eq!(changes.len(), 2, "{changes:#?}");
-        assert!(changes.iter().all(|c| c.impact == Impact::Cosmetic));
+        let pii = changes
+            .iter()
+            .find(|c| c.path.ends_with("pii"))
+            .expect("a pii change");
+        assert_eq!(pii.impact, Impact::Semantic);
+        // Writing a handling level down for the first time takes nothing away
+        // and contradicts nothing, for the same reason a definition written
+        // down for the first time is cosmetic.
+        let class = changes
+            .iter()
+            .find(|c| c.path.ends_with("classification"))
+            .expect("a classification change");
+        assert_eq!(class.impact, Impact::Cosmetic);
+        assert_eq!(class.description, "`id` was written down as internal");
+        // And the directions that matter more.
+        let back = diff(&new, &old);
+        assert!(back
+            .iter()
+            .any(|c| c.description == "`id` no longer says whether it holds personal data"));
+        assert!(back.iter().any(|c| c.impact == Impact::Semantic
+            && c.description == "`id` no longer says how it must be handled — it was internal"));
+    }
+
+    #[test]
+    fn declaring_a_column_not_personal_is_not_declaring_it_personal() {
+        // `pii: none` is the one value that means the opposite of the others.
+        // Comparing the options alone reads it as "something was tagged here",
+        // which is how an assurance gets announced as a leak.
+        let silent = contract(BASE);
+        let declared = contract(
+            "apiVersion: v1
+dataset: t
+columns:
+  id: { type: string, pii: none }
+",
+        );
+        let written = diff(&silent, &declared);
+        assert_eq!(written.len(), 1, "{written:#?}");
+        assert_eq!(written[0].impact, Impact::Cosmetic);
+        assert_eq!(
+            written[0].description,
+            "`id` was written down as holding no personal data"
+        );
+
+        // Taking the assurance back is not cosmetic: nobody stands behind it
+        // any more.
+        let withdrawn = diff(&declared, &silent);
+        assert_eq!(withdrawn.len(), 1, "{withdrawn:#?}");
+        assert_eq!(withdrawn[0].impact, Impact::Semantic);
+        assert_eq!(
+            withdrawn[0].description,
+            "`id` no longer says whether it holds personal data"
+        );
+
+        // And a real tag replacing the assurance is still the alarm.
+        let personal = contract(
+            "apiVersion: v1
+dataset: t
+columns:
+  id: { type: string, pii: email }
+",
+        );
+        let raised = diff(&declared, &personal);
+        assert_eq!(raised.len(), 1, "{raised:#?}");
+        assert_eq!(raised[0].description, "`id` is now marked as personal data");
+    }
+
+    #[test]
+    fn writing_a_definition_down_is_cosmetic_but_changing_one_is_not() {
+        // Three genuinely different things. Writing a definition down for the
+        // first time changes nothing that was ever agreed. Changing it is a
+        // redefinition, and removing it withdraws the shared meaning without
+        // replacing it, which leaves consumers holding an assumption nobody is
+        // standing behind any more.
+        let none = contract(BASE);
+        let first = contract(
+            "apiVersion: v1\ndataset: t\ncolumns:\n  id: { type: string, description: The order line reference. }\n",
+        );
+        let second = contract(
+            "apiVersion: v1\ndataset: t\ncolumns:\n  id: { type: string, description: The shipment reference. }\n",
+        );
+
+        let written = single(&none, &first);
+        assert_eq!(written.impact, Impact::Cosmetic);
+        assert_eq!(written.path, "columns.id.description");
+
+        let redefined = single(&first, &second);
+        assert_eq!(redefined.impact, Impact::Semantic);
+        assert!(redefined.description.contains("`id`"));
+
+        let withdrawn = single(&first, &none);
+        assert_eq!(withdrawn.impact, Impact::Semantic);
+    }
+
+    #[test]
+    fn the_datasets_own_definition_is_read_the_same_way() {
+        let none = contract(BASE);
+        let first = contract(&format!("{BASE}description: Orders, as booked.\n"));
+        let second = contract(&format!("{BASE}description: Orders, net of refunds.\n"));
+        assert_eq!(single(&none, &first).impact, Impact::Cosmetic);
+        let redefined = single(&first, &second);
+        assert_eq!(redefined.impact, Impact::Semantic);
+        assert_eq!(redefined.path, "description");
+    }
+
+    #[test]
+    fn a_redefinition_outranks_a_loosening() {
+        // The ordering is the whole point of the tier. A caller that sorts by
+        // impact to decide what to put at the top of a pull request comment has
+        // to surface the changed meaning above the relaxed rule, because the
+        // relaxed rule announces itself and the changed meaning never does.
+        assert!(Impact::Breaking < Impact::Semantic);
+        assert!(Impact::Semantic < Impact::NonBreaking);
+        assert!(Impact::NonBreaking < Impact::Cosmetic);
+        assert_eq!(Impact::Semantic.to_string(), "semantic");
+    }
+
+    #[test]
+    fn weakening_a_promise_is_semantic_and_strengthening_one_is_not() {
+        let stable = contract(BASE);
+        let deprecated = contract(
+            "apiVersion: v1\ndataset: t\ncolumns:\n  id: { type: string, stability: deprecated }\n",
+        );
+        let weaker = single(&stable, &deprecated);
+        assert_eq!(weaker.impact, Impact::Semantic);
+        assert_eq!(weaker.path, "columns.id.stability");
+        assert_eq!(single(&deprecated, &stable).impact, Impact::NonBreaking);
+
+        // Beta sits between the two, and the direction still decides.
+        let beta = contract(
+            "apiVersion: v1\ndataset: t\ncolumns:\n  id: { type: string, stability: beta }\n",
+        );
+        assert_eq!(single(&stable, &beta).impact, Impact::Semantic);
+        assert_eq!(single(&beta, &deprecated).impact, Impact::Semantic);
+        assert_eq!(single(&deprecated, &beta).impact, Impact::NonBreaking);
+    }
+
+    #[test]
+    fn a_removal_date_that_moves_closer_is_breaking() {
+        let mk = |date: &str| {
+            contract(&format!(
+                "apiVersion: v1\ndataset: t\ncolumns:\n  id: {{ type: string, stability: deprecated, sunset: {date} }}\n"
+            ))
+        };
+        let late = mk("2027-06-30");
+        let early = mk("2026-06-30");
+
+        // Nothing about the data changed. Work that was scheduled against June
+        // 2027 is now a year late, which is the definition of breaking.
+        let brought_forward = single(&late, &early);
+        assert_eq!(brought_forward.impact, Impact::Breaking);
+        assert_eq!(brought_forward.path, "columns.id.sunset");
+        assert!(brought_forward.description.contains("late"));
+
+        assert_eq!(single(&early, &late).impact, Impact::NonBreaking);
+    }
+
+    #[test]
+    fn setting_a_removal_date_is_semantic_and_withdrawing_one_is_not() {
+        let none = contract(
+            "apiVersion: v1\ndataset: t\ncolumns:\n  id: { type: string, stability: deprecated }\n",
+        );
+        let dated = contract(
+            "apiVersion: v1\ndataset: t\ncolumns:\n  id: { type: string, stability: deprecated, sunset: 2026-12-31 }\n",
+        );
+        let announced = single(&none, &dated);
+        assert_eq!(announced.impact, Impact::Semantic);
+        assert!(announced.description.contains("2026-12-31"));
+        assert_eq!(single(&dated, &none).impact, Impact::NonBreaking);
+    }
+
+    #[test]
+    fn removing_an_announced_column_says_it_was_announced() {
+        // Breaking either way -- the data is gone. But the reader of the diff
+        // needs to know whether this was the plan or a surprise.
+        let announced = contract(
+            "apiVersion: v1\ndataset: t\ncolumns:\n  id: { type: string }\n  legacy: { type: string, stability: deprecated, sunset: 2026-01-31 }\n",
+        );
+        let gone = contract(BASE);
+        let change = single(&announced, &gone);
+        assert_eq!(change.impact, Impact::Breaking);
+        assert!(change.description.contains("2026-01-31"), "{change:#?}");
+
+        let unannounced = contract(
+            "apiVersion: v1\ndataset: t\ncolumns:\n  id: { type: string }\n  legacy: { type: string }\n",
+        );
+        let plain = single(&unannounced, &gone);
+        assert_eq!(plain.description, "column `legacy` removed");
+    }
+
+    #[test]
+    fn a_migration_window_is_quiet_until_the_deadline_moves() {
+        let none = contract(BASE);
+        let far = contract(&format!(
+            "{BASE}migration: {{ window_ends: 2026-12-31, note: read amount_minor }}\n"
+        ));
+        let near = contract(&format!(
+            "{BASE}migration: {{ window_ends: 2026-10-01, note: read amount_minor }}\n"
+        ));
+
+        assert_eq!(single(&none, &far).impact, Impact::NonBreaking);
+        // Dropped once the window closes, which is bookkeeping, not news.
+        assert_eq!(single(&far, &none).impact, Impact::Cosmetic);
+        assert_eq!(single(&far, &near).impact, Impact::Breaking);
+        assert_eq!(single(&near, &far).impact, Impact::NonBreaking);
     }
 
     #[test]

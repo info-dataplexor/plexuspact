@@ -28,14 +28,21 @@ fn canonical_contract_parses_with_every_field() {
     );
     assert_eq!(c.version, None);
 
-    // consumers (reserved field, FR-11)
+    // consumers — the canonical contract declares one with no `reads`, which
+    // is how every contract written before that field existed reads: a
+    // dependency on the whole dataset.
     assert_eq!(
         c.consumers,
         vec![Consumer {
             name: "analytics-core".into(),
             contact: Some("data-team@acme.com".into()),
+            reads: vec![],
+            kind: None,
+            tier: None,
         }]
     );
+    assert!(c.consumers[0].reads_whole_dataset());
+    assert!(c.consumers[0].reads_column("email"));
 
     // columns, in YAML declaration order
     let names: Vec<&str> = c.columns.keys().map(String::as_str).collect();

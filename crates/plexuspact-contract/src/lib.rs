@@ -32,8 +32,9 @@ pub mod validate;
 pub use diff::{diff, Change, Impact};
 pub use export::{databricks_dlt, DltLang};
 pub use model::{
-    ApiVersion, ColType, ColumnCheck, ColumnDef, Consumer, Contract, DataClass, DatasetCheck,
-    EnumValue, KnownFormat, LengthRange, LengthSpec, Number, PiiKind, Settings, Severity,
+    is_iso_date, ApiVersion, ColType, ColumnCheck, ColumnDef, Consumer, ConsumerKind, Contract,
+    DataClass, DatasetCheck, EnumValue, KnownFormat, LengthRange, LengthSpec, Migration, Number,
+    PiiKind, Settings, Severity, Stability, TIER_LEAST_CRITICAL, TIER_MOST_CRITICAL,
 };
 pub use parse::{parse_file, parse_str, InvalidContract, ParseError};
 pub use schema::json_schema;

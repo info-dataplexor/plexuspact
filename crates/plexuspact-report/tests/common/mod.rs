@@ -54,6 +54,7 @@ fn passed_column_check(column: &str, kind: &str, params: serde_json::Value) -> C
 /// A run where every check passed. Exercises the single ✓ header line.
 pub fn all_pass() -> RunResult {
     RunResult {
+        observed_schema: None,
         result_schema_version: RESULT_SCHEMA_VERSION,
         tool_version: "0.1.0".to_owned(),
         contract: contract_ref("user_signups"),
@@ -169,6 +170,7 @@ pub fn mixed_failures() -> RunResult {
     };
 
     RunResult {
+        observed_schema: None,
         result_schema_version: RESULT_SCHEMA_VERSION,
         tool_version: "0.1.0".to_owned(),
         contract: contract_ref("user_signups"),
@@ -245,6 +247,7 @@ pub fn mixed_failures() -> RunResult {
 /// message and no rows-failed count.
 pub fn empty_dataset() -> RunResult {
     RunResult {
+        observed_schema: None,
         result_schema_version: RESULT_SCHEMA_VERSION,
         tool_version: "0.1.0".to_owned(),
         contract: ContractRef {
@@ -327,6 +330,7 @@ pub fn empty_dataset() -> RunResult {
 /// thousands-separator formatting, plus a long duration.
 pub fn huge_numbers() -> RunResult {
     RunResult {
+        observed_schema: None,
         result_schema_version: RESULT_SCHEMA_VERSION,
         tool_version: "0.1.0".to_owned(),
         contract: ContractRef {

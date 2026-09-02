@@ -16,6 +16,18 @@ use crate::error::EngineError;
 /// Cap on exact distinct-value tracking; beyond this the count is a lower bound.
 const DISTINCT_CAP: usize = 1_000_000;
 
+/// How many distinct values are *kept* (not merely counted) for a column.
+///
+/// Counting distinctness tells you a column looks categorical; it does not tell
+/// you what the categories are, which is the only form in which the fact is
+/// useful to anyone drafting a rule. Small and bounded on purpose — this is for
+/// `status`/`region`/`plan`, not for holding a copy of the data.
+const KEEP_VALUES_CAP: usize = 25;
+
+/// Longest value kept in [`ColumnProfile::values`]. A category name is short;
+/// anything longer is prose or an identifier and is not worth retaining.
+const KEEP_VALUE_MAX_CHARS: usize = 64;
+
 /// Profile of one column.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ColumnProfile {
@@ -43,6 +55,20 @@ pub struct ColumnProfile {
     pub min_length: Option<u64>,
     /// Maximum string length (chars) over non-null values.
     pub max_length: Option<u64>,
+    /// A named contract format (`email`, `uuid`, `url`) that *every* non-null
+    /// value matched. Only formats with a negligible false-positive rate are
+    /// reported: a guess here becomes a rule somebody's supplier is held to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub format: Option<String>,
+    /// The distinct values themselves, when the column held few enough of them
+    /// to be worth keeping (see [`KEEP_VALUES_CAP`]). Empty otherwise — an
+    /// empty list means "not collected", never "no values".
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub values: Vec<String>,
+    /// Whether [`Self::values`] is the complete distinct set. False when the
+    /// column had too many distinct values, or values too long, to retain.
+    #[serde(default)]
+    pub values_complete: bool,
 }
 
 /// Profile of a whole dataset.
@@ -106,6 +132,14 @@ struct ColumnAcc {
     bool_ok: u64,
     date_ok: u64,
     datetime_ok: u64,
+    email_ok: u64,
+    uuid_ok: u64,
+    url_ok: u64,
+    // Retained distinct values, abandoned the moment the column proves it is
+    // not categorical. `kept_values` is the ordered set; `keeping` goes false
+    // once the cap or the length limit is breached and never comes back.
+    kept_values: Vec<String>,
+    keeping: bool,
     // Numeric (Welford over float-parseable values).
     num_count: u64,
     mean: f64,
@@ -132,6 +166,11 @@ impl ColumnAcc {
             bool_ok: 0,
             date_ok: 0,
             datetime_ok: 0,
+            email_ok: 0,
+            uuid_ok: 0,
+            url_ok: 0,
+            kept_values: Vec::new(),
+            keeping: true,
             num_count: 0,
             mean: 0.0,
             m2: 0.0,
@@ -184,6 +223,27 @@ impl ColumnAcc {
         if is_datetime(t) {
             self.datetime_ok += 1;
         }
+        if is_email(t) {
+            self.email_ok += 1;
+        }
+        if is_uuid(t) {
+            self.uuid_ok += 1;
+        }
+        if is_url(t) {
+            self.url_ok += 1;
+        }
+
+        if self.keeping {
+            if s.chars().count() > KEEP_VALUE_MAX_CHARS {
+                self.stop_keeping();
+            } else if !self.kept_values.iter().any(|v| v == s) {
+                if self.kept_values.len() >= KEEP_VALUES_CAP {
+                    self.stop_keeping();
+                } else {
+                    self.kept_values.push(s.to_owned());
+                }
+            }
+        }
 
         // String stats.
         let len = s.chars().count() as u64;
@@ -194,6 +254,43 @@ impl ColumnAcc {
         }
         if self.str_max.as_deref().map_or(true, |cur| s > cur) {
             self.str_max = Some(s.to_owned());
+        }
+    }
+
+    /// Give up on retaining values, and release what was already held. A column
+    /// that overflows the cap is not categorical, so the partial list is not a
+    /// smaller truth — it is a misleading one, and keeping it would tempt a
+    /// caller into proposing an `enum` of the first 25 values it happened to see.
+    fn stop_keeping(&mut self) {
+        self.keeping = false;
+        self.kept_values = Vec::new();
+        self.kept_values.shrink_to_fit();
+    }
+
+    /// The named format every non-null value matched, if any.
+    ///
+    /// Only formats that are effectively unambiguous are reported. A column of
+    /// two-letter codes is not necessarily countries and a column of digits is
+    /// not necessarily a phone number; proposing either would put a rule in
+    /// front of a reviewer that is wrong more often than it is right, which is
+    /// how a helpful default becomes a habit of clicking past the defaults.
+    fn infer_format(&self) -> Option<&'static str> {
+        if self.non_null == 0 {
+            return None;
+        }
+        let all = self.non_null;
+        if self.uuid_ok == all {
+            Some("uuid")
+        } else if self.email_ok == all {
+            Some("email")
+        } else if self.url_ok == all {
+            Some("url")
+        } else if self.datetime_ok == all {
+            Some("iso_datetime")
+        } else if self.date_ok == all {
+            Some("iso_date")
+        } else {
+            None
         }
     }
 
@@ -227,8 +324,12 @@ impl ColumnAcc {
         }
     }
 
-    fn finish(self, rows: u64) -> ColumnProfile {
+    fn finish(mut self, rows: u64) -> ColumnProfile {
         let inferred = self.infer_type();
+        let format = self.infer_format().map(str::to_owned);
+        let values_complete = self.keeping;
+        let mut values = std::mem::take(&mut self.kept_values);
+        values.sort();
         let numeric = matches!(inferred, "int" | "float");
         let null_ratio = if rows == 0 {
             0.0
@@ -260,6 +361,9 @@ impl ColumnAcc {
             std: if numeric { std } else { None },
             min_length: self.min_len,
             max_length: self.max_len,
+            format,
+            values,
+            values_complete,
         }
     }
 }
@@ -286,6 +390,57 @@ fn is_date(s: &str) -> bool {
         && chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").is_ok()
 }
 
+/// Same shape the `format: email` check enforces: one `@`, something either
+/// side, and a dot in the domain. Deliberately not RFC 5322 — this decides
+/// whether to *offer* a rule, and the rule itself does the real validation.
+fn is_email(s: &str) -> bool {
+    let mut parts = s.split('@');
+    let (Some(local), Some(domain), None) = (parts.next(), parts.next(), parts.next()) else {
+        return false;
+    };
+    !local.is_empty()
+        && domain.len() >= 3
+        && domain.contains('.')
+        && !domain.starts_with('.')
+        && !domain.ends_with('.')
+        && !s.chars().any(char::is_whitespace)
+}
+
+/// Canonical 8-4-4-4-12 hyphenated UUID, any version, either case.
+fn is_uuid(s: &str) -> bool {
+    let b = s.as_bytes();
+    if b.len() != 36 {
+        return false;
+    }
+    for (i, c) in b.iter().enumerate() {
+        let hyphen = matches!(i, 8 | 13 | 18 | 23);
+        if hyphen {
+            if *c != b'-' {
+                return false;
+            }
+        } else if !c.is_ascii_hexdigit() {
+            return false;
+        }
+    }
+    true
+}
+
+/// An absolute http(s) URL with a host. Relative paths are not URLs for this
+/// purpose — a column of `/images/1.png` is a path, and saying otherwise would
+/// register a rule that fails on the very sample it was drafted from.
+fn is_url(s: &str) -> bool {
+    let rest = s
+        .strip_prefix("https://")
+        .or_else(|| s.strip_prefix("http://"));
+    match rest {
+        Some(rest) => {
+            let host = rest.split(['/', '?', '#']).next().unwrap_or("");
+            !host.is_empty() && !s.chars().any(char::is_whitespace)
+        }
+        None => false,
+    }
+}
+
 fn is_datetime(s: &str) -> bool {
     chrono::DateTime::parse_from_rfc3339(s).is_ok()
         || chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S").is_ok()
@@ -297,5 +452,63 @@ fn fmt_num(x: f64) -> String {
         format!("{}", x as i64)
     } else {
         format!("{x}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn acc_of(values: &[&str]) -> ColumnProfile {
+        let mut acc = ColumnAcc::new("c".to_owned());
+        for v in values {
+            acc.ingest_value(v);
+        }
+        acc.finish(values.len() as u64)
+    }
+
+    #[test]
+    fn formats_are_reported_only_when_every_value_matches() {
+        assert_eq!(
+            acc_of(&["a@b.com", "c.d@e.co.uk"]).format.as_deref(),
+            Some("email")
+        );
+        // One value that isn't an address withdraws the whole proposal.
+        assert_eq!(acc_of(&["a@b.com", "not an email"]).format, None);
+        assert_eq!(
+            acc_of(&["0191E2A9-8C2B-7000-8000-0123456789AB"])
+                .format
+                .as_deref(),
+            Some("uuid")
+        );
+        assert_eq!(
+            acc_of(&["https://example.com/x?y=1"]).format.as_deref(),
+            Some("url")
+        );
+        // A path is not a URL; proposing `format: url` here would fail the very
+        // file the rule was drafted from.
+        assert_eq!(acc_of(&["/images/1.png"]).format, None);
+        // Two-letter codes, digits and free text get no format at all.
+        assert_eq!(acc_of(&["DE", "IN"]).format, None);
+    }
+
+    #[test]
+    fn small_value_sets_are_kept_and_large_ones_are_abandoned() {
+        let low = acc_of(&["free", "pro", "free", "enterprise"]);
+        assert!(low.values_complete);
+        assert_eq!(low.values, vec!["enterprise", "free", "pro"]);
+
+        // Past the cap the partial list is dropped, not truncated — a caller
+        // must not be able to mistake "the first 25" for "all of them".
+        let many: Vec<String> = (0..KEEP_VALUES_CAP + 5).map(|i| i.to_string()).collect();
+        let refs: Vec<&str> = many.iter().map(String::as_str).collect();
+        let high = acc_of(&refs);
+        assert!(!high.values_complete);
+        assert!(high.values.is_empty());
+
+        // So is a column of long values, however few of them there are.
+        let long = acc_of(&["x".repeat(KEEP_VALUE_MAX_CHARS + 1).as_str()]);
+        assert!(!long.values_complete);
+        assert!(long.values.is_empty());
     }
 }

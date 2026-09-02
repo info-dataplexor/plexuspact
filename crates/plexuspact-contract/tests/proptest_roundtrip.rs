@@ -7,9 +7,9 @@ use std::time::Duration;
 
 use indexmap::IndexMap;
 use plexuspact_contract::{
-    diff, parse_str, ApiVersion, ColType, ColumnCheck, ColumnDef, Consumer, Contract, DataClass,
-    DatasetCheck, EnumValue, Impact, KnownFormat, LengthRange, LengthSpec, Number, PiiKind,
-    Settings, Severity,
+    diff, parse_str, ApiVersion, ColType, ColumnCheck, ColumnDef, Consumer, ConsumerKind, Contract,
+    DataClass, DatasetCheck, EnumValue, Impact, KnownFormat, LengthRange, LengthSpec, Migration,
+    Number, PiiKind, Settings, Severity, Stability,
 };
 use proptest::prelude::*;
 
@@ -125,23 +125,50 @@ fn data_class() -> impl Strategy<Value = DataClass> {
     ]
 }
 
+fn stability() -> impl Strategy<Value = Stability> {
+    prop_oneof![
+        Just(Stability::Stable),
+        Just(Stability::Beta),
+        Just(Stability::Deprecated),
+    ]
+}
+
+/// Days stop at 28 so every generated date is real in every month and year —
+/// the round trip is testing serialization, not the calendar.
+fn iso_date() -> impl Strategy<Value = String> {
+    (2000u32..2100, 1u32..13, 1u32..29).prop_map(|(y, m, d)| format!("{y:04}-{m:02}-{d:02}"))
+}
+
 fn column_def() -> impl Strategy<Value = ColumnDef> {
     (
         col_type(),
+        proptest::option::of("[a-zA-Z0-9 ,.'-]{1,60}"),
         any::<bool>(),
         proptest::option::of(pii_kind()),
         proptest::option::of(data_class()),
+        stability(),
+        proptest::option::of(iso_date()),
         proptest::collection::vec(column_check(), 0..4),
     )
         .prop_map(
-            |(r#type, required, pii, classification, checks)| ColumnDef {
-                r#type,
-                required,
-                pii,
-                classification,
-                checks,
+            |(r#type, description, required, pii, classification, stability, sunset, checks)| {
+                ColumnDef {
+                    r#type,
+                    description,
+                    required,
+                    pii,
+                    classification,
+                    stability,
+                    sunset,
+                    checks,
+                }
             },
         )
+}
+
+fn migration() -> impl Strategy<Value = Migration> {
+    (iso_date(), proptest::option::of("[a-zA-Z0-9 ,.'-]{1,60}"))
+        .prop_map(|(window_ends, note)| Migration { window_ends, note })
 }
 
 fn duration() -> impl Strategy<Value = Duration> {
@@ -191,7 +218,27 @@ fn settings() -> impl Strategy<Value = Settings> {
 }
 
 fn consumer() -> impl Strategy<Value = Consumer> {
-    (ident(), proptest::option::of(text())).prop_map(|(name, contact)| Consumer { name, contact })
+    (
+        ident(),
+        proptest::option::of(text()),
+        proptest::collection::vec(ident(), 0..3),
+        proptest::option::of(prop_oneof![
+            Just(ConsumerKind::Dashboard),
+            Just(ConsumerKind::Model),
+            Just(ConsumerKind::Api),
+            Just(ConsumerKind::Pipeline),
+            Just(ConsumerKind::AiAgent),
+            Just(ConsumerKind::Report),
+        ]),
+        proptest::option::of(1u8..=3),
+    )
+        .prop_map(|(name, contact, reads, kind, tier)| Consumer {
+            name,
+            contact,
+            reads,
+            kind,
+            tier,
+        })
 }
 
 /// A full contract covering every check form and reserved field.
@@ -204,6 +251,7 @@ fn contract() -> impl Strategy<Value = Contract> {
         proptest::collection::vec(consumer(), 0..3),
         proptest::collection::hash_map(ident(), column_def(), 0..4),
         proptest::collection::vec(dataset_check(), 0..4),
+        proptest::option::of(migration()),
         settings(),
     )
         .prop_map(
@@ -215,6 +263,7 @@ fn contract() -> impl Strategy<Value = Contract> {
                 consumers,
                 columns,
                 dataset_checks,
+                migration,
                 settings,
             )| {
                 Contract {
@@ -226,6 +275,7 @@ fn contract() -> impl Strategy<Value = Contract> {
                     consumers,
                     columns: columns.into_iter().collect::<IndexMap<_, _>>(),
                     dataset_checks,
+                    migration,
                     settings,
                 }
             },

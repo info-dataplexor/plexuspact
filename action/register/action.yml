@@ -1,0 +1,84 @@
+name: "PlexusPact register contract"
+description: >-
+  Put a contract into force in PlexusPact Cloud after it has been merged, and
+  record the pull request it came from. The counterpart to the preflight action:
+  preflight runs on the branch and writes nothing, this runs on the merge, when
+  the change has actually been agreed.
+author: "PlexusPact contributors"
+branding:
+  icon: check-circle
+  color: orange
+
+inputs:
+  contract:
+    description: "Path to the contract YAML (relative to the workspace)."
+    required: true
+  api-key:
+    description: >-
+      PlexusPact Cloud project API key. Pass a secret; it is never echoed and
+      never reaches a command line.
+    required: true
+  api:
+    description: "API root for self-hosted installs (default https://api.plexuspact.com/api/v1)."
+    required: false
+    default: ""
+  dataset:
+    description: "Register under this dataset name instead of the contract's own."
+    required: false
+    default: ""
+  version-label:
+    description: >-
+      Human label for this version. Defaults to the short commit SHA, which is
+      the thing somebody reading the version list a year from now can actually
+      look up.
+    required: false
+    default: ""
+  source-url:
+    description: >-
+      Where this version was agreed. Defaults to the pull request that merged
+      this commit, or the commit itself on a direct push. Set it to an empty
+      string to record nothing — an honest blank beats a link that goes
+      somewhere unrelated.
+    required: false
+    default: ""
+  version:
+    description: "plexuspact release version to download (without the leading 'v')."
+    required: false
+    default: "0.1.0"
+  fail-if-pending:
+    description: >-
+      Fail the job when the registry holds the version for approval instead of
+      putting it in force. Off by default: a project that requires review is
+      working as intended, and failing the merge job would punish it for that.
+    required: false
+    default: "false"
+  github-token:
+    description: "Token used to look up the pull request for this commit."
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  status:
+    description: "active (in force now) or proposed (waiting for an approver)."
+    value: ${{ steps.register.outputs.status }}
+  source-url:
+    description: "The provenance link that was recorded, if any."
+    value: ${{ steps.register.outputs.source-url }}
+
+runs:
+  using: composite
+  steps:
+    - id: register
+      shell: bash
+      env:
+        INPUT_CONTRACT: ${{ inputs.contract }}
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_DATASET: ${{ inputs.dataset }}
+        INPUT_VERSION_LABEL: ${{ inputs.version-label }}
+        INPUT_SOURCE_URL: ${{ inputs.source-url }}
+        INPUT_FAIL_IF_PENDING: ${{ inputs.fail-if-pending }}
+        PLEXUSPACT_API_KEY: ${{ inputs.api-key }}
+        PLEXUSPACT_API: ${{ inputs.api }}
+        GH_TOKEN: ${{ inputs.github-token }}
+        GH_REPO: dataplexor/plexuspact
+      run: "$GITHUB_ACTION_PATH/run.sh"

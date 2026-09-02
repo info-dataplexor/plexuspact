@@ -13,4 +13,4 @@ plexuspact::contract::parse
  3 │ columns:
    ╰────
   help: valid keys here are: apiVersion, dataset, owner, description, version,
-        consumers, columns, dataset_checks, settings
+        consumers, columns, dataset_checks, migration, settings

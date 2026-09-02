@@ -11,4 +11,5 @@ plexuspact::contract::parse
    ·         ─┬─
    ·          ╰── unrecognized key
    ╰────
-  help: valid keys here are: type, required, pii, classification, checks
+  help: valid keys here are: type, description, required, pii, classification,
+        stability, sunset, checks

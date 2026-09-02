@@ -65,6 +65,17 @@ fn snapshot_unknown_column_type() {
     ));
 }
 
+/// An unrecognized key that is *not* a near-miss of anything valid. This is the
+/// shape a contract takes when it was written for a newer PlexusPact, and the
+/// one place where "just delete it" would quietly destroy a declaration — a
+/// consumer's dependency list, here. The rendered help must offer the upgrade.
+#[test]
+fn snapshot_unknown_consumer_key_offers_the_upgrade() {
+    insta::assert_snapshot!(render(
+        "apiVersion: v1\ndataset: t\nconsumers:\n  - { name: finance, subscribes_to: [amount] }\ncolumns:\n  id: { type: string }\n"
+    ));
+}
+
 #[test]
 fn snapshot_unknown_check_name() {
     insta::assert_snapshot!(render(

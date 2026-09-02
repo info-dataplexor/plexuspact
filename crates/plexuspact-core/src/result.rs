@@ -37,6 +37,47 @@ pub struct RunResult {
     pub summary: RunSummary,
     /// Per-check outcomes, in contract order (columns first, then dataset checks).
     pub checks: Vec<CheckResult>,
+    /// The shape the source actually had, in source order.
+    ///
+    /// Additive within schema version 1 (ADR-007): older readers ignore it,
+    /// older producers omit it, and a consumer that receives `None` knows only
+    /// that nothing was recorded — never that the source had no columns.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub observed_schema: Option<ObservedSchema>,
+}
+
+/// The source's own schema at the moment of a run.
+///
+/// The checks answer "did the data honour the contract". This answers a
+/// different and quieter question: *what was actually there*. A column that
+/// appears, disappears, moves, or changes type without anybody declaring it is
+/// invisible to a contract that never mentioned it — and it is exactly the
+/// change that breaks a downstream reader at 3am. Comparing this snapshot with
+/// the previous run's is how that change gets a name and a timestamp.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ObservedSchema {
+    /// Whether `columns[].dtype` is the source's own typing.
+    ///
+    /// False for CSV, NDJSON, and JSON read as text: every column arrives as a
+    /// string, so a recorded dtype would describe the reader, not the source.
+    /// Names and order stay honest either way, which is most of what drift is.
+    pub typed: bool,
+    /// Every column the source presented, in the order it presented them.
+    pub columns: Vec<ObservedColumnInfo>,
+}
+
+/// One column as the source presented it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ObservedColumnInfo {
+    /// Column name, exactly as spelled in the source.
+    pub name: String,
+    /// The source's dtype, when it carries one.
+    ///
+    /// `None` means the source does not say — not "unknown type". A comparison
+    /// that treated the two the same would report a type change every time a
+    /// CSV feed switched readers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dtype: Option<String>,
 }
 
 /// Identity and provenance of the contract used for a run.
@@ -252,6 +293,7 @@ mod tests {
                 }],
                 message: None,
             }],
+            observed_schema: None,
         }
     }
 

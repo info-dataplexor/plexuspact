@@ -1,0 +1,82 @@
+name: "PlexusPact contract preflight"
+description: >-
+  Compare a contract on this branch against the version in force in PlexusPact
+  Cloud, comment on the pull request with what would change and who breaks, and
+  fail the job when the change tightens terms a consumer relies on. Writes
+  nothing to the registry — merging is what registers a contract.
+author: "PlexusPact contributors"
+branding:
+  icon: git-pull-request
+  color: orange
+
+inputs:
+  contract:
+    description: "Path to the contract YAML on this branch (relative to the workspace)."
+    required: true
+  api-key:
+    description: >-
+      PlexusPact Cloud project API key. Required: without it there is nothing to
+      compare against. Pass a secret; it is never echoed and never reaches a
+      command line.
+    required: true
+  api:
+    description: "API root for self-hosted installs (default https://api.plexuspact.com/api/v1)."
+    required: false
+    default: ""
+  dataset:
+    description: >-
+      The registered dataset to compare against, when this version renames it.
+      Without it a rename reads as a brand-new dataset with nothing to break.
+    required: false
+    default: ""
+  version:
+    description: "plexuspact release version to download (without the leading 'v')."
+    required: false
+    default: "0.1.0"
+  comment:
+    description: >-
+      Post the summary as a pull-request comment, updating the same comment on
+      every push rather than adding one per run.
+    required: false
+    default: "true"
+  fail-on-breaking:
+    description: >-
+      Fail the job when the change tightens the terms. Leave this on: a review
+      that has to notice a passing job's annotation is not a gate.
+    required: false
+    default: "true"
+  github-token:
+    description: "Token used to post the comment. Needs pull-requests: write."
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  verdict:
+    description: "invalid | unchanged | new | safe | breaking."
+    value: ${{ steps.preflight.outputs.verdict }}
+  breaking:
+    description: "How many changes tighten the terms."
+    value: ${{ steps.preflight.outputs.breaking }}
+  requires-review:
+    description: "true when merging would record this as proposed rather than putting it in force."
+    value: ${{ steps.preflight.outputs.requires-review }}
+  summary-file:
+    description: "Path to the Markdown summary."
+    value: ${{ steps.preflight.outputs.summary-file }}
+
+runs:
+  using: composite
+  steps:
+    - id: preflight
+      shell: bash
+      env:
+        INPUT_CONTRACT: ${{ inputs.contract }}
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_DATASET: ${{ inputs.dataset }}
+        INPUT_COMMENT: ${{ inputs.comment }}
+        INPUT_FAIL_ON_BREAKING: ${{ inputs.fail-on-breaking }}
+        PLEXUSPACT_API_KEY: ${{ inputs.api-key }}
+        PLEXUSPACT_API: ${{ inputs.api }}
+        GH_TOKEN: ${{ inputs.github-token }}
+        GH_REPO: dataplexor/plexuspact
+      run: "$GITHUB_ACTION_PATH/run.sh"

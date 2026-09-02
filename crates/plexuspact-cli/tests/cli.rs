@@ -12,8 +12,18 @@ const DATA: &str = "../../fixtures/signups_small.csv";
 fn bin() -> Command {
     let mut cmd = Command::cargo_bin("plexuspact").unwrap();
     cmd.env("NO_COLOR", "1");
+    // Reporting switches itself on from the environment, so a developer with a
+    // real key exported would otherwise have every test in this file try to
+    // reach the network. Each test that wants reporting asks for it.
+    cmd.env_remove("PLEXUSPACT_API_KEY");
+    cmd.env_remove("PLEXUSPACT_API");
+    cmd.env_remove("PLEXUSPACT_NO_NETWORK");
     cmd
 }
+
+/// A cloud that is definitely not there. Port 1 refuses immediately, so these
+/// tests exercise the failure path without waiting on a timeout.
+const NOWHERE: &str = "http://127.0.0.1:1/api/v1";
 
 fn write_temp(name: &str, contents: &str) -> tempfile::TempPath {
     let mut f = tempfile::Builder::new().suffix(name).tempfile().unwrap();
@@ -357,4 +367,184 @@ fn json_path_wraps_single_object_as_one_record() {
         "got:\n{yaml}"
     );
     plexuspact_contract::parse_str(&yaml, "draft").expect("draft parses");
+}
+
+// ─────────────────────────── push / report home ──────────────────────────
+
+#[test]
+fn push_without_a_token_is_a_usage_error() {
+    let result = write_temp("result.json", r#"{"result_schema_version":1}"#);
+    bin()
+        .args(["push"])
+        .arg(&result)
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("PLEXUSPACT_API_KEY"));
+}
+
+#[test]
+fn requiring_a_push_without_a_token_is_a_usage_error() {
+    let contract = write_temp("contract.yaml", CLEAN_CONTRACT);
+    let data = write_temp("data.csv", "id,name\n1,alice\n");
+    bin()
+        .args(["check"])
+        .arg(&data)
+        .arg("--contract")
+        .arg(&contract)
+        .arg("--push")
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("PLEXUSPACT_API_KEY"));
+}
+
+#[test]
+fn an_unreachable_cloud_never_changes_a_clean_verdict() {
+    let contract = write_temp("contract.yaml", CLEAN_CONTRACT);
+    let data = write_temp("data.csv", "id,name\n1,alice\n");
+    bin()
+        .args(["check"])
+        .arg(&data)
+        .arg("--contract")
+        .arg(&contract)
+        .env("PLEXUSPACT_API_KEY", "ck_live_notarealkeyjustshapedlikeone")
+        .env("PLEXUSPACT_API", NOWHERE)
+        .assert()
+        .code(0)
+        .stderr(predicate::str::contains("could not reach"));
+}
+
+#[test]
+fn an_unreachable_cloud_never_changes_a_failing_verdict() {
+    bin()
+        .args([
+            "check",
+            DATA,
+            "--contract",
+            CONTRACT,
+            "--now",
+            "2026-07-10T00:00:00Z",
+        ])
+        .env("PLEXUSPACT_API_KEY", "ck_live_notarealkeyjustshapedlikeone")
+        .env("PLEXUSPACT_API", NOWHERE)
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("could not reach"));
+}
+
+#[test]
+fn a_required_push_that_fails_turns_a_clean_run_into_an_error() {
+    let contract = write_temp("contract.yaml", CLEAN_CONTRACT);
+    let data = write_temp("data.csv", "id,name\n1,alice\n");
+    bin()
+        .args(["check"])
+        .arg(&data)
+        .arg("--contract")
+        .arg(&contract)
+        .arg("--push")
+        .env("PLEXUSPACT_API_KEY", "ck_live_notarealkeyjustshapedlikeone")
+        .env("PLEXUSPACT_API", NOWHERE)
+        .assert()
+        .code(3);
+}
+
+#[test]
+fn no_push_ignores_a_key_in_the_environment() {
+    let contract = write_temp("contract.yaml", CLEAN_CONTRACT);
+    let data = write_temp("data.csv", "id,name\n1,alice\n");
+    bin()
+        .args(["check"])
+        .arg(&data)
+        .arg("--contract")
+        .arg(&contract)
+        .arg("--no-push")
+        .env("PLEXUSPACT_API_KEY", "ck_live_notarealkeyjustshapedlikeone")
+        .env("PLEXUSPACT_API", NOWHERE)
+        .assert()
+        .code(0)
+        .stderr(predicate::str::contains("could not reach").not());
+}
+
+#[test]
+fn a_bad_api_url_is_caught_before_the_data_is_read() {
+    // The data path is deliberately nonexistent: if this exits 2 complaining
+    // about the URL rather than the file, nothing was read.
+    bin()
+        .args(["check", "no-such-file.csv", "--contract", CONTRACT])
+        .env("PLEXUSPACT_API_KEY", "ck_live_notarealkeyjustshapedlikeone")
+        .env("PLEXUSPACT_API", "ftp://example.com")
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("not an http(s) URL"));
+}
+
+#[test]
+fn a_key_is_never_sent_in_the_clear_to_a_remote_host() {
+    bin()
+        .args(["check", DATA, "--contract", CONTRACT])
+        .env("PLEXUSPACT_API_KEY", "ck_live_notarealkeyjustshapedlikeone")
+        .env("PLEXUSPACT_API", "http://example.com/api/v1")
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("plain http"));
+}
+
+#[test]
+fn offline_outranks_a_key_in_the_environment() {
+    let contract = write_temp("contract.yaml", CLEAN_CONTRACT);
+    let data = write_temp("data.csv", "id,name\n1,alice\n");
+    bin()
+        .args(["check"])
+        .arg(&data)
+        .arg("--contract")
+        .arg(&contract)
+        .arg("--offline")
+        .env("PLEXUSPACT_API_KEY", "ck_live_notarealkeyjustshapedlikeone")
+        .env("PLEXUSPACT_API", NOWHERE)
+        .assert()
+        .code(0)
+        .stderr(predicate::str::contains("could not reach").not());
+}
+
+#[test]
+fn the_no_network_variable_outranks_a_key_in_the_environment() {
+    // The point of the variable rather than the flag: a base image sets it and
+    // nothing running underneath can talk, whatever it exports.
+    let contract = write_temp("contract.yaml", CLEAN_CONTRACT);
+    let data = write_temp("data.csv", "id,name\n1,alice\n");
+    bin()
+        .args(["check"])
+        .arg(&data)
+        .arg("--contract")
+        .arg(&contract)
+        .env("PLEXUSPACT_NO_NETWORK", "1")
+        .env("PLEXUSPACT_API_KEY", "ck_live_notarealkeyjustshapedlikeone")
+        .env("PLEXUSPACT_API", NOWHERE)
+        .assert()
+        .code(0)
+        .stderr(predicate::str::contains("could not reach").not());
+}
+
+#[test]
+fn requiring_a_push_while_offline_is_a_usage_error() {
+    // Contradictory instructions are worth an error rather than a quiet
+    // preference for one of them.
+    bin()
+        .args(["check", DATA, "--contract", CONTRACT, "--push", "--offline"])
+        .env("PLEXUSPACT_API_KEY", "ck_live_notarealkeyjustshapedlikeone")
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("--offline"));
+}
+
+#[test]
+fn push_rejects_a_file_that_is_not_a_result() {
+    let junk = write_temp("junk.json", "not json at all");
+    bin()
+        .args(["push"])
+        .arg(&junk)
+        .env("PLEXUSPACT_API_KEY", "ck_live_notarealkeyjustshapedlikeone")
+        .env("PLEXUSPACT_API", NOWHERE)
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("is not JSON"));
 }

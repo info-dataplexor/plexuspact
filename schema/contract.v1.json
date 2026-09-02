@@ -279,6 +279,13 @@
           ],
           "description": "Data classification (reserved, FR-11 — no engine behavior in v1)."
         },
+        "description": {
+          "description": "What the column means, in a sentence the supplier would recognise.\n\nThe engine never reads this. It exists because the expensive half of a broken delivery is the argument about what the column was supposed to contain, and that argument is settled by a sentence written before anything broke. ODCS carries the same field on a property, so it survives a round trip in both directions.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "pii": {
           "anyOf": [
             {
@@ -294,6 +301,21 @@
           "default": false,
           "description": "If `true`, the column must not contain nulls.",
           "type": "boolean"
+        },
+        "stability": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/Stability"
+            }
+          ],
+          "description": "How much a consumer may rely on this column staying as it is.\n\nAbsent means [`Stability::Stable`] — the promise every column has always carried, stated out loud rather than assumed."
+        },
+        "sunset": {
+          "description": "The date after which this column will no longer be here, as `YYYY-MM-DD`.\n\nHeld as a string rather than a date type on purpose: this crate parses contracts on machines that may have no clock worth trusting, and it has no business deciding what \"today\" is. [`crate::validate`] proves the shape and the calendar; ISO-8601 sorts lexicographically, which is all the diff needs to tell a date that moved closer from one that moved away. Anything that acts on the date — refusing a change, chasing the consumers who still read the column — does it where a clock exists.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "type": {
           "allOf": [
@@ -311,7 +333,7 @@
     },
     "Consumer": {
       "additionalProperties": false,
-      "description": "A downstream consumer of the dataset.\n\nReserved field (PRD FR-11) — parsed and echoed, no engine behavior in v1.",
+      "description": "A downstream consumer of the dataset.\n\nThe validation engine still never reads this — a consumer changes no verdict. What [`Consumer::reads`] adds is the other half of the sentence a contract is for: not only what the supplier promised, but who inside your own company is standing behind that promise. It is what lets a tool answer *who breaks* when a column is dropped or a delivery fails on it.",
       "properties": {
         "contact": {
           "description": "Contact for the consumer (email, Slack channel, …).",
@@ -320,15 +342,90 @@
             "null"
           ]
         },
+        "kind": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ConsumerKind"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What this consumer is — see [`ConsumerKind`].\n\nAbsent stays absent. There is no sensible default here: guessing `pipeline` for a consumer whose author said nothing would print a category somebody could act on and nobody wrote down."
+        },
         "name": {
           "description": "Consumer name (team, service, or dashboard).",
           "type": "string"
+        },
+        "reads": {
+          "description": "The columns this consumer depends on.\n\n**Empty means the whole dataset**, and that is the honest default: a consumer who has not said which columns they read is a consumer who might break on any of them, and quietly narrowing their blast radius to nothing would make an unanswered question look like a safe answer. Say the columns and the answer gets sharper — a change to `region` stops paging the team that only reads `amount`.\n\nEvery name must be a column the contract declares; [`crate::validate`] rejects the rest, because a typo here is a dependency that silently matches nothing, which is worse than no declaration at all.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "tier": {
+          "description": "How much depends on this one, from 1 (most) to 3 (least).\n\nDeliberately three numbers and not a free-text severity. The point of a tier is to be *comparable* across two consumers nobody has ever had to compare before — the moment somebody has to choose which of two teams finds out first. A scale with five levels, or with words, is a scale where everything ends up in the top two.\n\nAbsent means it has not been ranked, which is not the same as tier 3. [`crate::validate`] proves the range; nothing here decides what a tier is worth, because that is a decision each organisation makes.",
+          "format": "uint8",
+          "maximum": 3.0,
+          "minimum": 1.0,
+          "type": [
+            "integer",
+            "null"
+          ]
         }
       },
       "required": [
         "name"
       ],
       "type": "object"
+    },
+    "ConsumerKind": {
+      "description": "What a consumer *is*.\n\n\"Three consumers\" is a number. \"A tier-1 dashboard, a model and an internal report\" is a decision, and it is a different decision in each case: a dashboard that goes blank is embarrassing on a Monday morning, a model that silently retrains on a changed column is wrong for a quarter, and an agent reading the dataset over an API has nobody watching it at all.\n\nThe engine never reads this — a kind changes no verdict. It changes what the sentence says when somebody has to decide whether to approve a tightening today or wait until the window closes.",
+      "oneOf": [
+        {
+          "description": "A chart somebody looks at. Breaks visibly, and to an audience.",
+          "enum": [
+            "dashboard"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "A trained or scheduled model. Breaks quietly, and keeps running.",
+          "enum": [
+            "model"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "A service serving this data onward. Its own consumers are not in here.",
+          "enum": [
+            "api"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "A scheduled job. Usually fails loudly, at 3am.",
+          "enum": [
+            "pipeline"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "An autonomous workload reading this without a person in the loop.",
+          "enum": [
+            "ai_agent"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "A document produced on a schedule. Wrong quietly, and circulated.",
+          "enum": [
+            "report"
+          ],
+          "type": "string"
+        }
+      ]
     },
     "DataClass": {
       "description": "Data classification level of a column.\n\nReserved field (PRD FR-11) — no engine behavior in v1.",
@@ -644,6 +741,27 @@
       ],
       "description": "String-length constraint: exact (`length: 2`) or a range (`length: { min: 1, max: 10 }`)."
     },
+    "Migration": {
+      "additionalProperties": false,
+      "description": "The window a supplier gives consumers to get ready for a breaking change.\n\nA breaking change with a date attached is a plan. The same change without one is an outage that has not happened yet, and the difference between them is not the diff — it is whether anybody downstream was told when.\n\nThis block is about *this version*: what it broke, and by when everyone reading it has to have moved. It is expected to be dropped again once the window closes, so a later version losing it is not itself an event.",
+      "properties": {
+        "note": {
+          "description": "What consumers have to actually do, in their words rather than the diff's. \"`amount` is minor units from 15 Oct; read `amount_minor` today\" is the sentence that saves the calls.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "window_ends": {
+          "description": "The date consumers must be ready by, as `YYYY-MM-DD`.\n\nRequired, and deliberately so. A migration block without a deadline is a promise to deal with it later, which is the thing it exists to replace.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "window_ends"
+      ],
+      "type": "object"
+    },
     "Number": {
       "anyOf": [
         {
@@ -771,6 +889,32 @@
           "type": "string"
         }
       ]
+    },
+    "Stability": {
+      "description": "How much a consumer is entitled to rely on a column.\n\nThe contract already says what a column *is*. This says how long it can be counted on to stay that way, which is the question a consumer has to answer before building anything on it — and which, until now, they could only answer by asking somebody.\n\nIt also gives a supplier the one move they did not have: retiring a column on purpose. Removing a column has always been a breaking change and always will be. Announcing months ahead that it is going, with a date, turns that breaking change from something that happens *to* consumers into something they were given time to prepare for.",
+      "oneOf": [
+        {
+          "description": "The default, and what every column without the field means. It will not be removed or retyped without the notice a breaking change gets.",
+          "enum": [
+            "stable"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Offered, not promised. Read it if you like; it may move without the ceremony a stable column gets.",
+          "enum": [
+            "beta"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "On its way out. `sunset` says when.",
+          "enum": [
+            "deprecated"
+          ],
+          "type": "string"
+        }
+      ]
     }
   },
   "description": "A parsed data contract (the root of `contract.yaml`).",
@@ -815,6 +959,17 @@
         "string",
         "null"
       ]
+    },
+    "migration": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/Migration"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "The migration window for the breaking changes this version introduces.\n\nOptional, because most versions break nothing. A project can require it for the ones that do — see the cloud's review settings."
     },
     "owner": {
       "description": "Owning team or person.",

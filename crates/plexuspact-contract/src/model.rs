@@ -97,6 +97,112 @@ impl fmt::Display for ColType {
     }
 }
 
+/// How much a consumer is entitled to rely on a column.
+///
+/// The contract already says what a column *is*. This says how long it can be
+/// counted on to stay that way, which is the question a consumer has to answer
+/// before building anything on it — and which, until now, they could only
+/// answer by asking somebody.
+///
+/// It also gives a supplier the one move they did not have: retiring a column
+/// on purpose. Removing a column has always been a breaking change and always
+/// will be. Announcing months ahead that it is going, with a date, turns that
+/// breaking change from something that happens *to* consumers into something
+/// they were given time to prepare for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Stability {
+    /// The default, and what every column without the field means. It will not
+    /// be removed or retyped without the notice a breaking change gets.
+    #[default]
+    Stable,
+    /// Offered, not promised. Read it if you like; it may move without the
+    /// ceremony a stable column gets.
+    Beta,
+    /// On its way out. `sunset` says when.
+    Deprecated,
+}
+
+impl Stability {
+    /// Ordering by how much is promised: stable promises most, deprecated least.
+    ///
+    /// Used by the diff, where the direction is the whole story — weakening a
+    /// promise is a change consumers must read, and strengthening one is not.
+    fn rank(self) -> u8 {
+        match self {
+            Stability::Stable => 0,
+            Stability::Beta => 1,
+            Stability::Deprecated => 2,
+        }
+    }
+
+    /// Whether this is the value a contract that says nothing means.
+    fn is_default(&self) -> bool {
+        *self == Stability::Stable
+    }
+
+    /// Compares how much two levels promise. `Greater` means *more* promised.
+    pub fn promises_more_than(self, other: Self) -> std::cmp::Ordering {
+        other.rank().cmp(&self.rank())
+    }
+}
+
+impl fmt::Display for Stability {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Stability::Stable => "stable",
+            Stability::Beta => "beta",
+            Stability::Deprecated => "deprecated",
+        })
+    }
+}
+
+/// What a consumer *is*.
+///
+/// "Three consumers" is a number. "A tier-1 dashboard, a model and an internal
+/// report" is a decision, and it is a different decision in each case: a
+/// dashboard that goes blank is embarrassing on a Monday morning, a model that
+/// silently retrains on a changed column is wrong for a quarter, and an agent
+/// reading the dataset over an API has nobody watching it at all.
+///
+/// The engine never reads this — a kind changes no verdict. It changes what
+/// the sentence says when somebody has to decide whether to approve a
+/// tightening today or wait until the window closes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ConsumerKind {
+    /// A chart somebody looks at. Breaks visibly, and to an audience.
+    Dashboard,
+    /// A trained or scheduled model. Breaks quietly, and keeps running.
+    Model,
+    /// A service serving this data onward. Its own consumers are not in here.
+    Api,
+    /// A scheduled job. Usually fails loudly, at 3am.
+    Pipeline,
+    /// An autonomous workload reading this without a person in the loop.
+    AiAgent,
+    /// A document produced on a schedule. Wrong quietly, and circulated.
+    Report,
+}
+
+impl fmt::Display for ConsumerKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            ConsumerKind::Dashboard => "dashboard",
+            ConsumerKind::Model => "model",
+            ConsumerKind::Api => "api",
+            ConsumerKind::Pipeline => "pipeline",
+            ConsumerKind::AiAgent => "AI agent",
+            ConsumerKind::Report => "report",
+        })
+    }
+}
+
+/// The lowest tier number, and the most critical.
+pub const TIER_MOST_CRITICAL: u8 = 1;
+/// The highest tier number, and the least critical.
+pub const TIER_LEAST_CRITICAL: u8 = 3;
+
 /// Kind of personally identifiable information stored in a column.
 ///
 /// Reserved field (PRD FR-11): parsed, validated, and echoed into results —
@@ -138,6 +244,17 @@ pub enum DataClass {
     Confidential,
     /// Highest sensitivity.
     Restricted,
+}
+
+impl fmt::Display for DataClass {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            DataClass::Public => "public",
+            DataClass::Internal => "internal",
+            DataClass::Confidential => "confidential",
+            DataClass::Restricted => "restricted",
+        })
+    }
 }
 
 /// Built-in value formats accepted by the `format` check.
@@ -1181,7 +1298,11 @@ impl JsonSchema for DatasetCheck {
 
 /// A downstream consumer of the dataset.
 ///
-/// Reserved field (PRD FR-11) — parsed and echoed, no engine behavior in v1.
+/// The validation engine still never reads this — a consumer changes no
+/// verdict. What [`Consumer::reads`] adds is the other half of the sentence a
+/// contract is for: not only what the supplier promised, but who inside your
+/// own company is standing behind that promise. It is what lets a tool answer
+/// *who breaks* when a column is dropped or a delivery fails on it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Consumer {
@@ -1190,6 +1311,61 @@ pub struct Consumer {
     /// Contact for the consumer (email, Slack channel, …).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub contact: Option<String>,
+    /// What this consumer is — see [`ConsumerKind`].
+    ///
+    /// Absent stays absent. There is no sensible default here: guessing
+    /// `pipeline` for a consumer whose author said nothing would print a
+    /// category somebody could act on and nobody wrote down.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<ConsumerKind>,
+    /// How much depends on this one, from 1 (most) to 3 (least).
+    ///
+    /// Deliberately three numbers and not a free-text severity. The point of a
+    /// tier is to be *comparable* across two consumers nobody has ever had to
+    /// compare before — the moment somebody has to choose which of two teams
+    /// finds out first. A scale with five levels, or with words, is a scale
+    /// where everything ends up in the top two.
+    ///
+    /// Absent means it has not been ranked, which is not the same as tier 3.
+    /// [`crate::validate`] proves the range; nothing here decides what a tier
+    /// is worth, because that is a decision each organisation makes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(range(min = 1, max = 3))]
+    pub tier: Option<u8>,
+    /// The columns this consumer depends on.
+    ///
+    /// **Empty means the whole dataset**, and that is the honest default: a
+    /// consumer who has not said which columns they read is a consumer who
+    /// might break on any of them, and quietly narrowing their blast radius to
+    /// nothing would make an unanswered question look like a safe answer. Say
+    /// the columns and the answer gets sharper — a change to `region` stops
+    /// paging the team that only reads `amount`.
+    ///
+    /// Every name must be a column the contract declares; [`crate::validate`]
+    /// rejects the rest, because a typo here is a dependency that silently
+    /// matches nothing, which is worse than no declaration at all.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reads: Vec<String>,
+}
+
+impl Consumer {
+    /// Whether this consumer depends on `column`.
+    ///
+    /// A consumer that named no columns depends on all of them — see
+    /// [`Consumer::reads`].
+    pub fn reads_column(&self, column: &str) -> bool {
+        self.reads.is_empty() || self.reads.iter().any(|c| c == column)
+    }
+
+    /// Whether this consumer's dependency is undeclared, and therefore total.
+    ///
+    /// Worth distinguishing when reporting: "affected (reads the whole
+    /// dataset)" and "affected (reads `email`)" are different degrees of
+    /// certainty, and flattening them would overstate the second or understate
+    /// the first.
+    pub fn reads_whole_dataset(&self) -> bool {
+        self.reads.is_empty()
+    }
 }
 
 /// Definition of a single column in the contract.
@@ -1198,6 +1374,15 @@ pub struct Consumer {
 pub struct ColumnDef {
     /// Declared data type.
     pub r#type: ColType,
+    /// What the column means, in a sentence the supplier would recognise.
+    ///
+    /// The engine never reads this. It exists because the expensive half of a
+    /// broken delivery is the argument about what the column was supposed to
+    /// contain, and that argument is settled by a sentence written before
+    /// anything broke. ODCS carries the same field on a property, so it
+    /// survives a round trip in both directions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
     /// If `true`, the column must not contain nulls.
     #[serde(default)]
     pub required: bool,
@@ -1207,9 +1392,50 @@ pub struct ColumnDef {
     /// Data classification (reserved, FR-11 — no engine behavior in v1).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub classification: Option<DataClass>,
+    /// How much a consumer may rely on this column staying as it is.
+    ///
+    /// Absent means [`Stability::Stable`] — the promise every column has always
+    /// carried, stated out loud rather than assumed.
+    #[serde(default, skip_serializing_if = "Stability::is_default")]
+    pub stability: Stability,
+    /// The date after which this column will no longer be here, as `YYYY-MM-DD`.
+    ///
+    /// Held as a string rather than a date type on purpose: this crate parses
+    /// contracts on machines that may have no clock worth trusting, and it has
+    /// no business deciding what "today" is. [`crate::validate`] proves the
+    /// shape and the calendar; ISO-8601 sorts lexicographically, which is all
+    /// the diff needs to tell a date that moved closer from one that moved
+    /// away. Anything that acts on the date — refusing a change, chasing the
+    /// consumers who still read the column — does it where a clock exists.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sunset: Option<String>,
     /// Column-level checks, evaluated in order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub checks: Vec<ColumnCheck>,
+}
+
+/// The window a supplier gives consumers to get ready for a breaking change.
+///
+/// A breaking change with a date attached is a plan. The same change without
+/// one is an outage that has not happened yet, and the difference between them
+/// is not the diff — it is whether anybody downstream was told when.
+///
+/// This block is about *this version*: what it broke, and by when everyone
+/// reading it has to have moved. It is expected to be dropped again once the
+/// window closes, so a later version losing it is not itself an event.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Migration {
+    /// The date consumers must be ready by, as `YYYY-MM-DD`.
+    ///
+    /// Required, and deliberately so. A migration block without a deadline is a
+    /// promise to deal with it later, which is the thing it exists to replace.
+    pub window_ends: String,
+    /// What consumers have to actually do, in their words rather than the
+    /// diff's. "`amount` is minor units from 15 Oct; read `amount_minor` today"
+    /// is the sentence that saves the calls.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
 }
 
 /// Dataset-wide validation settings.
@@ -1263,9 +1489,48 @@ pub struct Contract {
     /// Dataset-level checks.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dataset_checks: Vec<DatasetCheck>,
+    /// The migration window for the breaking changes this version introduces.
+    ///
+    /// Optional, because most versions break nothing. A project can require it
+    /// for the ones that do — see the cloud's review settings.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub migration: Option<Migration>,
     /// Validation settings.
     #[serde(default)]
     pub settings: Settings,
+}
+
+/// Whether `s` is a real calendar date written `YYYY-MM-DD`.
+///
+/// Hand-rolled rather than pulled from a date library because this crate holds
+/// its dependencies down to the ones the parser cannot do without, and this is
+/// twenty lines. It is strict about the shape — no `2026-9-1`, no times, no
+/// zone — so that two dates can always be compared as strings.
+pub fn is_iso_date(s: &str) -> bool {
+    let b = s.as_bytes();
+    if b.len() != 10 || b[4] != b'-' || b[7] != b'-' {
+        return false;
+    }
+    if !b
+        .iter()
+        .enumerate()
+        .all(|(i, c)| i == 4 || i == 7 || c.is_ascii_digit())
+    {
+        return false;
+    }
+    let num = |from: usize, to: usize| s[from..to].parse::<u32>().unwrap_or(0);
+    let (y, m, d) = (num(0, 4), num(5, 7), num(8, 10));
+    if !(1..=12).contains(&m) || d == 0 {
+        return false;
+    }
+    let leap = (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
+    let days = match m {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        _ if leap => 29,
+        _ => 28,
+    };
+    d <= days
 }
 
 #[cfg(test)]

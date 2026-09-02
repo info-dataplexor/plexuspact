@@ -7,7 +7,7 @@ use plexuspact_io::BatchSource;
 
 use crate::checks::BatchView;
 use crate::column::{self, ColumnData};
-use crate::{CheckOutcome, EngineError, EngineOutput, RunOptions};
+use crate::{CheckOutcome, EngineError, EngineOutput, ObservedColumn, RunOptions};
 
 /// Executes a contract's checks against a streaming source.
 ///
@@ -25,6 +25,21 @@ pub fn execute(
         .map(|n| n.to_string())
         .collect();
     let source_columns = present.len() as u64;
+
+    // The same schema again, but kept in *source* order rather than sorted, and
+    // with the dtypes attached. Position is part of what a snapshot has to
+    // remember: two columns swapping places is a change a name-only comparison
+    // cannot see, and a downstream reader addressing columns by index breaks on
+    // it.
+    let observed_typed = source.typing() == plexuspact_io::InputTyping::Native;
+    let observed_columns: Vec<ObservedColumn> = source
+        .schema()
+        .iter()
+        .map(|(name, dtype)| ObservedColumn {
+            name: name.to_string(),
+            dtype: observed_typed.then(|| dtype.to_string()),
+        })
+        .collect();
 
     let now_micros = opts.now.timestamp_micros();
     let mut checks = crate::plan::build(contract, &present, now_micros);
@@ -72,6 +87,8 @@ pub fn execute(
     Ok(EngineOutput {
         rows_total,
         source_columns,
+        observed_columns,
+        observed_typed,
         checks: outcomes,
     })
 }

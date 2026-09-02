@@ -15,6 +15,16 @@ pub struct Cli {
     #[arg(short, long, action = clap::ArgAction::Count, global = true)]
     pub verbose: u8,
 
+    /// Never open a network connection, whatever else is configured.
+    ///
+    /// Checking is local and always has been; the only thing this switches off
+    /// is reporting a result to PlexusPact Cloud. It exists so that "this ran
+    /// entirely on our machines" can be enforced rather than assumed —
+    /// `PLEXUSPACT_NO_NETWORK` in the environment does the same for a whole
+    /// image, and neither can be overridden from below.
+    #[arg(long, global = true)]
+    pub offline: bool,
+
     #[command(subcommand)]
     pub command: Command,
 }
@@ -26,8 +36,12 @@ pub enum Command {
     Init(InitArgs),
     /// Validate a dataset against a contract.
     Check(CheckArgs),
+    /// Report a saved JSON result to PlexusPact Cloud.
+    Push(PushArgs),
     /// Compare two contracts and classify the changes.
     Diff(DiffArgs),
+    /// Put a contract into force in PlexusPact Cloud.
+    Register(RegisterArgs),
     /// Parse and lint a contract without running it.
     ValidateContract(ValidateArgs),
     /// Export a contract to another tool's format (e.g. Databricks DLT).
@@ -100,18 +114,99 @@ pub struct CheckArgs {
     /// Reference time for freshness checks (RFC 3339). Testing/reproducibility.
     #[arg(long, value_name = "RFC3339")]
     pub now: Option<String>,
+    /// Require the result to be reported to PlexusPact Cloud.
+    ///
+    /// Reporting already happens on its own whenever `PLEXUSPACT_API_KEY` is
+    /// set. This flag makes a missing key an error instead of a silence, which
+    /// is what you want in CI: a secret that was never wired up should be
+    /// noticed on the first run, not discovered a month later.
+    #[arg(long, conflicts_with = "no_push")]
+    pub push: bool,
+    /// Never report this result, even if a key is set.
+    #[arg(long)]
+    pub no_push: bool,
+    /// API root to report to (default `https://api.plexuspact.com/api/v1`).
+    #[arg(long, value_name = "URL", env = "PLEXUSPACT_API")]
+    pub api: Option<String>,
 }
 
-/// `plexuspact diff <old> <new>`
+/// `plexuspact push <result.json>`
+///
+/// For results that already exist: a file written earlier in the job, a nightly
+/// batch, a retry of something the network ate the first time. `check` reports
+/// on its own; this is the same hop for a document on disk.
+#[derive(Debug, clap::Args)]
+pub struct PushArgs {
+    /// JSON result file to report (`-` for stdin).
+    pub path: String,
+    /// API root to report to (default `https://api.plexuspact.com/api/v1`).
+    #[arg(long, value_name = "URL", env = "PLEXUSPACT_API")]
+    pub api: Option<String>,
+}
+
+/// `plexuspact diff <old> <new>`, or `plexuspact diff <new> --against-registry`
+///
+/// Two files, or one file and the truth. Comparing two working-copy files
+/// answers a question the author already knows the answer to; comparing against
+/// the registry answers the one the pull request actually raises, which is what
+/// is in force right now and who breaks if this lands.
 #[derive(Debug, clap::Args)]
 pub struct DiffArgs {
-    /// The previous contract.
+    /// The previous contract — or, with `--against-registry`, the only contract.
     pub old: PathBuf,
-    /// The new contract.
-    pub new: PathBuf,
+    /// The new contract. Omitted with `--against-registry`, which supplies it.
+    pub new: Option<PathBuf>,
     /// Emit machine-readable JSON instead of human output.
     #[arg(long)]
     pub json: bool,
+    /// Compare against the version in force in PlexusPact Cloud, and report who
+    /// breaks. Needs `PLEXUSPACT_API_KEY`; writes nothing.
+    #[arg(long)]
+    pub against_registry: bool,
+    /// The registered dataset to compare against, when this version renames it.
+    /// Without it a rename reads as a new dataset with nothing to break.
+    #[arg(long, value_name = "NAME", requires = "against_registry")]
+    pub dataset: Option<String>,
+    /// Write a Markdown summary here, for a pull-request comment.
+    #[arg(long, value_name = "FILE", requires = "against_registry")]
+    pub markdown: Option<PathBuf>,
+    /// API root to ask (default `https://api.plexuspact.com/api/v1`).
+    #[arg(long, value_name = "URL", env = "PLEXUSPACT_API")]
+    pub api: Option<String>,
+}
+
+/// `plexuspact register <contract.yaml>`
+///
+/// The other half of `diff --against-registry`. Preflight asks what a branch
+/// would do and writes nothing; this is the call made after the merge, when the
+/// change has actually been agreed.
+///
+/// `--source-url` is the point of it. An API key is one account, not one
+/// person, so a contract registered from CI otherwise arrives from nowhere.
+/// Passing the pull request that merged it turns "a machine did this" into
+/// "these people agreed to this, here, and here is the discussion".
+#[derive(Debug, clap::Args)]
+pub struct RegisterArgs {
+    /// Contract file to register.
+    pub contract: PathBuf,
+    /// Register under this dataset name instead of the contract's own.
+    #[arg(long, value_name = "NAME")]
+    pub dataset: Option<String>,
+    /// A human label for this version (a tag, a release, a commit).
+    #[arg(long, value_name = "LABEL")]
+    pub version_label: Option<String>,
+    /// Where this version was agreed — the pull request, merge request or work
+    /// item that merged it. Recorded on the version and in the audit trail.
+    #[arg(long, value_name = "URL")]
+    pub source_url: Option<String>,
+    /// Exit non-zero when the registry holds the version for approval instead
+    /// of putting it in force. Off by default: a project that requires review
+    /// is working as intended, and failing the merge job would punish it.
+    #[arg(long)]
+    pub fail_if_pending: bool,
+    /// API root to register with (default `https://api.plexuspact.com/api/v1`).
+    #[arg(long, value_name = "URL", env = "PLEXUSPACT_API")]
+    pub api: Option<String>,
 }
 
 /// `plexuspact validate-contract <file>`

@@ -1,0 +1,18 @@
+---
+source: crates/plexuspact-contract/tests/error_snapshots.rs
+expression: "render(\"apiVersion: v1\\ndataset: t\\nconsumers:\\n  - { name: finance, subscribes_to: [amount] }\\ncolumns:\\n  id: { type: string }\\n\")"
+---
+plexuspact::contract::parse
+
+  × unknown key `subscribes_to` (at `consumers[0]`)
+   ╭─[contract.yaml:4:22]
+ 3 │ consumers:
+ 4 │   - { name: finance, subscribes_to: [amount] }
+   ·                      ──────┬──────
+   ·                            ╰── unrecognized key
+ 5 │ columns:
+   ╰────
+  help: valid keys here are: name, contact, kind, tier, reads
+        or, if this contract was written for a newer PlexusPact, upgrade the
+        CLI (this one is 0.1.0) — deleting a key this binary does not know can
+        drop a real declaration

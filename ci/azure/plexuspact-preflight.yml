@@ -1,0 +1,160 @@
+# PlexusPact contract preflight for Azure Pipelines.
+#
+# Ask the registry what this branch's contract would do before it is merged:
+# what changes, who breaks, and whether merging puts it in force or leaves it
+# waiting for an approver. Writes nothing — merging is what registers a
+# contract.
+#
+# Use it as a step template:
+#
+#   resources:
+#     repositories:
+#       - repository: plexuspact
+#         type: github
+#         name: dataplexor/plexuspact
+#         ref: refs/tags/v0.1.0
+#         endpoint: github
+#
+#   steps:
+#     - template: ci/azure/plexuspact-preflight.yml@plexuspact
+#       parameters:
+#         contract: contracts/user_signups.yaml
+#         apiKey: $(PLEXUSPACT_API_KEY)
+#
+# `apiKey` must come from a secret variable or a variable group. Azure does not
+# map secret variables into the environment on its own, which is why it is
+# passed explicitly here and then handed to the step as an env var rather than
+# put on a command line where it would land in the log.
+#
+# For the comment on the pull request, the pipeline's own build-service identity
+# needs "Contribute to pull requests" on the repository. Without it the job
+# still runs and still gates; it just has nowhere to leave the summary.
+
+parameters:
+  - name: contract
+    type: string
+  - name: apiKey
+    type: string
+  - name: api
+    type: string
+    default: ""
+  - name: dataset
+    type: string
+    default: ""
+  - name: version
+    type: string
+    default: "0.1.0"
+  - name: comment
+    type: boolean
+    default: true
+  # Leave this on. A review that has to notice a passing job's log output is not
+  # a gate.
+  - name: failOnBreaking
+    type: boolean
+    default: true
+
+steps:
+  - task: Bash@3
+    displayName: "PlexusPact contract preflight"
+    env:
+      PLEXUSPACT_API_KEY: ${{ parameters.apiKey }}
+      PLEXUSPACT_API: ${{ parameters.api }}
+      SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+    inputs:
+      targetType: inline
+      script: |
+        set -euo pipefail
+
+        version="${{ parameters.version }}"
+        base="https://github.com/dataplexor/plexuspact/releases/download/v${version}"
+        asset="plexuspact-v${version}-x86_64-unknown-linux-musl.tar.gz"
+
+        # Verified, not merely downloaded. A supply chain that is checked only
+        # when somebody remembers is not checked.
+        curl -fsSL -o "$asset" "${base}/${asset}"
+        curl -fsSL -o SHA256SUMS "${base}/SHA256SUMS"
+        grep " ${asset}\$" SHA256SUMS | sha256sum -c -
+        tar -xzf "$asset" plexuspact
+        chmod +x plexuspact
+        ./plexuspact --version
+
+        args=(diff "${{ parameters.contract }}" --against-registry --json --markdown plexuspact-preflight.md)
+        dataset="${{ parameters.dataset }}"
+        if [ -n "$dataset" ]; then args+=(--dataset "$dataset"); fi
+
+        code=0
+        ./plexuspact "${args[@]}" > plexuspact-preflight.json || code=$?
+
+        # Exit 3 is the registry never answering. That is not a passing build:
+        # the question was asked and nothing came back, and a job that calls that
+        # "no breaking changes" stops catching them the first time the network is
+        # slow.
+        if [ "$code" = "3" ]; then
+          echo "##vso[task.logissue type=error]plexuspact could not reach the registry; nothing was compared"
+          exit 3
+        fi
+
+        verdict=$(jq -r '.verdict // ""' plexuspact-preflight.json)
+        summary=$(jq -r '.summary // ""' plexuspact-preflight.json)
+        echo "$summary"
+
+        # One annotation per breaking change, so the reviewer reads it where they
+        # are already looking rather than in a job log.
+        jq -r '.changes[]? | select(.impact == "breaking")
+               | "##vso[task.logissue type=error]\(.path) — \(.description)"' \
+          plexuspact-preflight.json || true
+        jq -r '.impact.consumers[]?
+               | "##vso[task.logissue type=warning]\(.name) reads what this change touches"' \
+          plexuspact-preflight.json || true
+
+        # The comment on the pull request, updated in place rather than appended:
+        # a contract that goes through four pushes should leave one comment
+        # saying what is true now, not four saying what used to be.
+        pr="${SYSTEM_PULLREQUEST_PULLREQUESTID:-}"
+        if [ "${{ lower(parameters.comment) }}" = "true" ] && [ -n "$pr" ] && [ -s plexuspact-preflight.md ]; then
+          marker="<!-- plexuspact-preflight -->"
+          printf '%s\n\n' "$marker" | cat - plexuspact-preflight.md > body.md
+
+          threads="${SYSTEM_COLLECTIONURI}${SYSTEM_TEAMPROJECTID}/_apis/git/repositories/${BUILD_REPOSITORY_ID}/pullRequests/${pr}/threads"
+          auth=(-H "Authorization: Bearer ${SYSTEM_ACCESSTOKEN}" -H "Content-Type: application/json")
+
+          existing=$(curl -fsSL "${auth[@]}" "${threads}?api-version=7.1" \
+            | jq -r --arg m "$marker" \
+              '[.value[]? | select((.comments[0].content // "") | startswith($m))][0]
+               | if . == null then "" else "\(.id) \(.comments[0].id)" end' || echo "")
+
+          if [ -n "$existing" ]; then
+            thread_id=${existing% *}
+            comment_id=${existing#* }
+            jq -Rs '{content: .}' < body.md > payload.json
+            curl -fsSL -X PATCH "${auth[@]}" --data @payload.json \
+              "${threads}/${thread_id}/comments/${comment_id}?api-version=7.1" >/dev/null \
+              || echo "##vso[task.logissue type=warning]could not update the preflight comment (the build service needs 'Contribute to pull requests')"
+          else
+            jq -Rs '{comments: [{parentCommentId: 0, content: ., commentType: 1}], status: 1}' \
+              < body.md > payload.json
+            curl -fsSL -X POST "${auth[@]}" --data @payload.json \
+              "${threads}?api-version=7.1" >/dev/null \
+              || echo "##vso[task.logissue type=warning]could not post the preflight comment (the build service needs 'Contribute to pull requests')"
+          fi
+        fi
+
+        case "$verdict" in
+          invalid)
+            echo "##vso[task.logissue type=error]${summary}"
+            exit 2 ;;
+          breaking)
+            if [ "${{ lower(parameters.failOnBreaking) }}" = "true" ]; then
+              echo "##vso[task.logissue type=error]${summary}"
+              exit 1
+            fi
+            echo "##vso[task.logissue type=warning]${summary}" ;;
+        esac
+        exit 0
+
+  - task: PublishBuildArtifacts@1
+    displayName: "Publish the preflight summary"
+    condition: always()
+    inputs:
+      pathToPublish: plexuspact-preflight.md
+      artifactName: plexuspact-preflight

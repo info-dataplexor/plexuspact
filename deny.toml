@@ -19,6 +19,12 @@ allow = [
     "CC0-1.0",
     "MPL-2.0",
     "BSL-1.0",
+    # TLS, reached only through `plexuspact push`.
+    # `ring` is ISC/MIT for its own code and carries the OpenSSL licence for the
+    # BoringSSL assembly it vendors; `webpki-roots` ships Mozilla's CA list under
+    # the CDLA. Both are permissive and neither is copyleft.
+    "OpenSSL",
+    "CDLA-Permissive-2.0",
 ]
 confidence-threshold = 0.9
 

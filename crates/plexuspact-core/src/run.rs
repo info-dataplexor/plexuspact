@@ -9,7 +9,8 @@ use sha2::{Digest, Sha256};
 use crate::error::CoreError;
 use crate::result::{
     CheckMetrics, CheckResult, CheckSeverity, CheckStatus, ConsumerRef, ContractRef, FailureSample,
-    RunResult, RunStatus, RunSummary, SourceInfo, RESULT_SCHEMA_VERSION,
+    ObservedColumnInfo, ObservedSchema, RunResult, RunStatus, RunSummary, SourceInfo,
+    RESULT_SCHEMA_VERSION,
 };
 
 /// A request to validate one source against one contract.
@@ -107,6 +108,18 @@ pub fn run(req: RunRequest, tool_version: &str) -> Result<RunResult, CoreError> 
 
     let duration_ms = (Utc::now() - started_at).num_milliseconds().max(0) as u64;
 
+    let observed_schema = Some(ObservedSchema {
+        typed: engine_out.observed_typed,
+        columns: engine_out
+            .observed_columns
+            .iter()
+            .map(|c| ObservedColumnInfo {
+                name: c.name.clone(),
+                dtype: c.dtype.clone(),
+            })
+            .collect(),
+    });
+
     let checks: Vec<CheckResult> = engine_out
         .checks
         .into_iter()
@@ -144,6 +157,7 @@ pub fn run(req: RunRequest, tool_version: &str) -> Result<RunResult, CoreError> 
         status,
         summary,
         checks,
+        observed_schema,
     })
 }
 

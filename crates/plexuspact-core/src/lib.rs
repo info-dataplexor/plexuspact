@@ -17,6 +17,7 @@ pub use error::CoreError;
 pub use plexuspact_engine::{profile, ColumnProfile, DatasetProfile};
 pub use result::{
     CheckMetrics, CheckResult, CheckSeverity, CheckStatus, ConsumerRef, ContractRef, FailureSample,
-    RunResult, RunStatus, RunSummary, SourceInfo, RESULT_SCHEMA_VERSION,
+    ObservedColumnInfo, ObservedSchema, RunResult, RunStatus, RunSummary, SourceInfo,
+    RESULT_SCHEMA_VERSION,
 };
 pub use run::{profile_path, run, run_check, RunRequest};

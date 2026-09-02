@@ -265,21 +265,62 @@ fn enrich_message(msg: &str) -> (String, String, Option<String>) {
     (message, label, help)
 }
 
+/// What this binary was built as, for the messages that offer an upgrade.
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// Added when a *key* is unrecognized and not a plausible typo.
+///
+/// The schema only ever grows, and every struct in the model is
+/// `deny_unknown_fields` on purpose: a silently ignored `maxx: 5` is exactly
+/// the class of mistake this tool exists to catch. The cost of that strictness
+/// is that a contract written for a newer PlexusPact does not degrade — it
+/// fails outright on an older binary. That is the right failure, but only if
+/// the message names the right cause.
+///
+/// "Remove the key" is the one piece of advice that loses data here. A
+/// consumer's `reads`, for instance, is its declared dependency; deleting it to
+/// satisfy an old binary silently widens that team's blast radius, and nothing
+/// downstream ever mentions it again.
+fn unknown_key_note() -> String {
+    format!(
+        "or, if this contract was written for a newer PlexusPact, upgrade the CLI \
+         (this one is {VERSION}) — deleting a key this binary does not know can \
+         drop a real declaration"
+    )
+}
+
+/// Added when a *value* is unrecognized and not a plausible typo.
+///
+/// Deliberately shorter than [`unknown_key_note`]: an unknown value is replaced
+/// rather than deleted, so no declaration is at stake and only the version
+/// theory is worth stating. It stays brief because the list of valid values
+/// above it usually *is* the answer — `type: text` is a reader reaching for SQL,
+/// not a reader on an old binary.
+fn unknown_value_note() -> String {
+    format!("or upgrade the CLI (this one is {VERSION}) if this contract targets a newer schema")
+}
+
 /// Classifies a serde message with the path prefix already removed.
 fn classify_message(msg: &str) -> (String, String, Option<String>) {
     if msg.starts_with("unknown field `") {
         let tokens = backticked(msg);
         if let Some((field, expected)) = tokens.split_first() {
             let expected_refs: Vec<&str> = expected.iter().map(String::as_str).collect();
+            let suggestion = did_you_mean(field, expected_refs.iter().copied());
             let mut message = format!("unknown key `{field}`");
-            if let Some(suggestion) = did_you_mean(field, expected_refs.iter().copied()) {
+            if let Some(suggestion) = suggestion {
                 message.push_str(&format!(" — did you mean `{suggestion}`?"));
             }
-            let help = if expected_refs.is_empty() {
+            let mut help = if expected_refs.is_empty() {
                 format!("remove `{field}`; no keys are allowed here")
             } else {
                 format!("valid keys here are: {}", expected_refs.join(", "))
             };
+            // A near-miss is a typo and needs no second theory; anything else
+            // might be a key from a schema this binary predates.
+            if suggestion.is_none() {
+                help.push_str(&format!("\n{}", unknown_key_note()));
+            }
             return (message, "unrecognized key".to_string(), Some(help));
         }
     }
@@ -287,19 +328,25 @@ fn classify_message(msg: &str) -> (String, String, Option<String>) {
         let tokens = backticked(msg);
         if let Some((variant, expected)) = tokens.split_first() {
             let expected_refs: Vec<&str> = expected.iter().map(String::as_str).collect();
-            // Only `apiVersion` has exactly the single variant `v1`.
+            // Only `apiVersion` has exactly the single variant `v1`. This is
+            // the likeliest place a reader meets a schema newer than their
+            // binary, so it says so without waiting to be asked.
             if expected_refs == ["v1"] {
                 return (
                     format!("unsupported apiVersion `{variant}`; supported versions: v1"),
                     "unsupported version".to_string(),
-                    Some("set `apiVersion: v1`".to_string()),
+                    Some(format!("set `apiVersion: v1` — {}", unknown_value_note())),
                 );
             }
+            let suggestion = did_you_mean(variant, expected_refs.iter().copied());
             let mut message = format!("unknown value `{variant}`");
-            if let Some(suggestion) = did_you_mean(variant, expected_refs.iter().copied()) {
+            if let Some(suggestion) = suggestion {
                 message.push_str(&format!(" — did you mean `{suggestion}`?"));
             }
-            let help = format!("valid values here are: {}", expected_refs.join(", "));
+            let mut help = format!("valid values here are: {}", expected_refs.join(", "));
+            if suggestion.is_none() {
+                help.push_str(&format!("\n{}", unknown_value_note()));
+            }
             return (message, "unrecognized value".to_string(), Some(help));
         }
     }
@@ -413,6 +460,58 @@ mod tests {
         let m = msg("apiVersion: v2\ndataset: t\ncolumns: {}\n");
         assert!(m.contains("unsupported apiVersion `v2`"), "{m}");
         assert!(m.contains("supported versions: v1"), "{m}");
+    }
+
+    /// The help text for a parse failure, or `""` when there is none.
+    fn help(src: &str) -> String {
+        match err(src) {
+            ParseError::Invalid(inv) => inv.help.unwrap_or_default(),
+            other => panic!("expected Invalid variant, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_near_miss_key_is_treated_as_a_typo_and_not_as_a_version_problem() {
+        // `datasett` is one edit from `dataset`. Offering an upgrade here would
+        // be noise on top of an answer the reader already has.
+        let h = help("apiVersion: v1\ndatasett: t\ncolumns: {}\n");
+        assert!(h.contains("valid keys here are"), "{h}");
+        assert!(
+            !h.contains("upgrade"),
+            "typo help should not mention upgrading: {h}"
+        );
+    }
+
+    #[test]
+    fn an_unrecognizable_key_offers_the_upgrade_before_the_delete() {
+        let h = help("apiVersion: v1\ndataset: t\nprovenance_ledger: yes\ncolumns: {}\n");
+        assert!(h.contains("upgrade the CLI"), "{h}");
+        assert!(h.contains(env!("CARGO_PKG_VERSION")), "{h}");
+    }
+
+    /// The case this exists for: a key that carries a declaration. Telling the
+    /// reader to delete it would quietly widen a consumer's blast radius.
+    #[test]
+    fn an_unknown_consumer_key_never_advises_deleting_a_dependency() {
+        let h = help(
+            "apiVersion: v1\ndataset: t\nconsumers:\n  - { name: finance, subscribes_to: [amount] }\ncolumns:\n  id: { type: string }\n",
+        );
+        assert!(h.contains("upgrade the CLI"), "{h}");
+        assert!(h.contains("can drop a real declaration"), "{h}");
+    }
+
+    #[test]
+    fn an_unsupported_api_version_points_at_the_upgrade_too() {
+        let h = help("apiVersion: v2\ndataset: t\ncolumns: {}\n");
+        assert!(h.contains("apiVersion: v1"), "{h}");
+        assert!(h.contains("upgrade the CLI"), "{h}");
+    }
+
+    #[test]
+    fn an_unrecognizable_value_offers_the_upgrade_as_well() {
+        let h = help("apiVersion: v1\ndataset: t\ncolumns:\n  id: { type: geospatial }\n");
+        assert!(h.contains("valid values here are"), "{h}");
+        assert!(h.contains("upgrade the CLI"), "{h}");
     }
 
     #[test]

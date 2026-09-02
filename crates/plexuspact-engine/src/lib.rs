@@ -66,9 +66,30 @@ pub struct EngineOutput {
     pub rows_total: u64,
     /// Number of columns present in the source.
     pub source_columns: u64,
+    /// The source's own schema, in source order — what was *there*, as opposed
+    /// to what the contract expected to be there. Recorded on every run so a
+    /// later run can be compared against it: a column that quietly appeared,
+    /// vanished, moved, or changed type is a change nobody declared, and it is
+    /// only visible if somebody wrote down what the shape was last time.
+    pub observed_columns: Vec<ObservedColumn>,
+    /// Whether the dtypes above are the source's own. False for CSV/NDJSON/JSON
+    /// read stringly, where every column arrives as text and a recorded dtype
+    /// would be the reader's convention rather than the source's declaration.
+    pub observed_typed: bool,
     /// Per-check outcomes, in a stable order (schema checks, then column checks
     /// in contract order, then dataset checks).
     pub checks: Vec<CheckOutcome>,
+}
+
+/// One column as the source presented it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ObservedColumn {
+    /// Column name, exactly as the source spells it.
+    pub name: String,
+    /// The source's dtype, when the source carries types; `None` when it does
+    /// not. `None` means "the source does not say", never "unknown type" —
+    /// the difference matters when deciding whether a type changed.
+    pub dtype: Option<String>,
 }
 
 /// Outcome of a single check.

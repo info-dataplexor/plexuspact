@@ -33,6 +33,31 @@ inputs:
     description: "Name of the uploaded HTML report artifact. Set to empty string to skip the upload."
     required: false
     default: "plexuspact-report"
+  api-key:
+    description: >-
+      PlexusPact Cloud project API key. Pass a secret here and every run this
+      workflow produces is recorded against the project, with no glue to write.
+      Leave empty and the check stays entirely local.
+    required: false
+    default: ""
+  api:
+    description: "API root for self-hosted installs (default https://api.plexuspact.com/api/v1)."
+    required: false
+    default: ""
+  redact-samples:
+    description: >-
+      Mask the sample failing values in the result, keeping row numbers. Worth
+      turning on whenever the result leaves the runner and the failing rows are
+      sensitive.
+    required: false
+    default: "false"
+  require-push:
+    description: >-
+      Fail the job when a run could not be recorded. Off by default, so a
+      network blip never turns a green dataset red; turn it on when a missing
+      run is as serious as a failing check.
+    required: false
+    default: "false"
 
 outputs:
   exit-code:
@@ -41,6 +66,9 @@ outputs:
   results-file:
     description: "Path to the saved results file."
     value: ${{ steps.check.outputs.results-file }}
+  run-url:
+    description: "URL of the recorded run in PlexusPact Cloud. Empty when no api-key was given, or when the run could not be recorded."
+    value: ${{ steps.check.outputs.run-url }}
 
 runs:
   using: composite
@@ -53,6 +81,12 @@ runs:
         INPUT_VERSION: ${{ inputs.version }}
         INPUT_STRICT: ${{ inputs.strict }}
         INPUT_FORMAT: ${{ inputs.format }}
+        INPUT_REDACT_SAMPLES: ${{ inputs.redact-samples }}
+        INPUT_REQUIRE_PUSH: ${{ inputs.require-push }}
+        # Read by the CLI itself. Empty means no reporting, which is the
+        # default; it is never echoed, and never reaches the command line.
+        PLEXUSPACT_API_KEY: ${{ inputs.api-key }}
+        PLEXUSPACT_API: ${{ inputs.api }}
         GH_REPO: dataplexor/plexuspact
       run: "$GITHUB_ACTION_PATH/run.sh"
 

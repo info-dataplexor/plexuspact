@@ -102,6 +102,34 @@ pub fn validate(contract: &Contract) -> Vec<LintError> {
         lint_dataset_check(i, check, contract, &mut out);
     }
 
+    for (i, consumer) in contract.consumers.iter().enumerate() {
+        lint_consumer(i, consumer, contract, &mut out);
+    }
+
+    if let Some(m) = &contract.migration {
+        if !crate::model::is_iso_date(&m.window_ends) {
+            out.push(LintError::error(
+                "migration.window_ends",
+                format!("`{}` is not a date", m.window_ends),
+                Some("write it as `YYYY-MM-DD`, e.g. `window_ends: 2026-12-31`".into()),
+            ));
+        }
+        // A window with no instructions is a deadline. The note is the part
+        // that tells a consumer what to actually do before it, and without it
+        // the announcement moves the work onto them without saying what it is.
+        if m.note.as_deref().map(str::trim).unwrap_or("").is_empty() {
+            out.push(LintError::warning(
+                "migration.note",
+                "the migration window says when, but not what to do",
+                Some(
+                    "add a `note` naming the replacement, e.g. `read `amount_minor`; \
+                     `amount` becomes minor units`"
+                        .into(),
+                ),
+            ));
+        }
+    }
+
     if contract.settings.columns_exact && contract.settings.allow_extra_columns {
         out.push(LintError::warning(
             "settings.columns_exact",
@@ -113,8 +141,155 @@ pub fn validate(contract: &Contract) -> Vec<LintError> {
     out
 }
 
+/// Lints one declared consumer.
+///
+/// A consumer that names a column the contract does not declare is a
+/// dependency that matches nothing. Nothing about the run changes, which is
+/// exactly the danger: the consumer looks declared, is reported as unaffected
+/// by every change, and the first anyone hears of the typo is the morning
+/// their dashboard is empty. So it is an error, not a warning — an unstated
+/// dependency at least reads as unstated.
+fn lint_consumer(
+    i: usize,
+    consumer: &crate::model::Consumer,
+    contract: &Contract,
+    out: &mut Vec<LintError>,
+) {
+    let path = format!("consumers[{i}]");
+
+    if consumer.name.trim().is_empty() {
+        out.push(LintError::error(
+            format!("{path}.name"),
+            "consumer has no name",
+            Some("name the team, service or dashboard, e.g. `{ name: finance-weekly }`".into()),
+        ));
+    }
+
+    // A tier outside 1–3 is not a stricter consumer, it is a typo that will be
+    // sorted and compared against real ones. Reject it here rather than let a
+    // "tier 0" quietly outrank everything on every screen downstream.
+    if let Some(tier) = consumer.tier {
+        use crate::model::{TIER_LEAST_CRITICAL, TIER_MOST_CRITICAL};
+        if !(TIER_MOST_CRITICAL..=TIER_LEAST_CRITICAL).contains(&tier) {
+            out.push(LintError::error(
+                format!("{path}.tier"),
+                format!(
+                    "consumer `{}` has tier {tier}, which is outside 1–3",
+                    consumer.name
+                ),
+                Some(
+                    "use 1 for the ones that stop the business, 3 for the ones that can wait"
+                        .into(),
+                ),
+            ));
+        }
+    }
+
+    let mut seen: HashMap<&str, usize> = HashMap::new();
+    for (j, column) in consumer.reads.iter().enumerate() {
+        let at = format!("{path}.reads[{j}]");
+
+        if let Some(first) = seen.insert(column.as_str(), j) {
+            out.push(LintError::warning(
+                at.clone(),
+                format!("`{column}` is listed twice (first at reads[{first}])"),
+                Some("remove the duplicate; it does not widen the dependency".into()),
+            ));
+            continue;
+        }
+
+        if !contract.columns.contains_key(column) {
+            let help = crate::suggest::did_you_mean(
+                column,
+                contract.columns.keys().map(String::as_str),
+            )
+            .map_or_else(
+                || {
+                    "name a column this contract declares, or drop `reads` to depend on the whole \
+                     dataset"
+                        .to_owned()
+                },
+                |s| format!("did you mean `{s}`?"),
+            );
+            out.push(LintError::error(
+                at,
+                format!(
+                    "consumer `{}` reads `{column}`, which this contract does not declare",
+                    consumer.name
+                ),
+                Some(help),
+            ));
+        }
+    }
+}
+
 /// Lints one column definition.
+/// Lints a column's retirement plan: the `stability` promise and the date.
+///
+/// The two fields only work as a pair. `stability: deprecated` with no date is
+/// a column somebody has stopped supporting without saying until when, which
+/// leaves a consumer knowing they have to move and not knowing by when — the
+/// half of the announcement that is hard to act on. A `sunset` date on a column
+/// still marked stable is the same failure from the other side: the schedule is
+/// there and the warning is not, so a consumer reading `stability` sees a
+/// promise the date contradicts.
+///
+/// Both are warnings, not errors. Each half on its own is more than most
+/// contracts say today, and refusing to register a partial announcement would
+/// mean the supplier says nothing instead.
+fn lint_retirement(name: &str, col: &crate::model::ColumnDef, out: &mut Vec<LintError>) {
+    use crate::model::Stability;
+
+    if let Some(date) = &col.sunset {
+        if !crate::model::is_iso_date(date) {
+            out.push(LintError::error(
+                format!("columns.{name}.sunset"),
+                format!("`{date}` is not a date"),
+                Some("write it as `YYYY-MM-DD`, e.g. `sunset: 2026-12-31`".into()),
+            ));
+        }
+        if col.stability != Stability::Deprecated {
+            out.push(LintError::warning(
+                format!("columns.{name}.stability"),
+                format!(
+                    "`{name}` has a removal date but is still marked `{}`",
+                    col.stability
+                ),
+                Some(
+                    "set `stability: deprecated` so a consumer reading the column sees the \
+                     warning, not just the date"
+                        .into(),
+                ),
+            ));
+        }
+    } else if col.stability == Stability::Deprecated {
+        out.push(LintError::warning(
+            format!("columns.{name}.sunset"),
+            format!("`{name}` is deprecated with no removal date"),
+            Some(
+                "add `sunset: YYYY-MM-DD` — a consumer told to move and not told by when \
+                 cannot schedule the work"
+                    .into(),
+            ),
+        ));
+    }
+
+    if col.stability == Stability::Deprecated && col.required {
+        out.push(LintError::warning(
+            format!("columns.{name}.required"),
+            format!("`{name}` is deprecated but still required, so nulls still fail"),
+            Some(
+                "drop `required: true` if consumers are meant to stop populating it before \
+                 the sunset date"
+                    .into(),
+            ),
+        ));
+    }
+}
+
 fn lint_column(name: &str, col: &crate::model::ColumnDef, out: &mut Vec<LintError>) {
+    lint_retirement(name, col, out);
+
     let mut min_seen: Option<(usize, f64)> = None;
     let mut max_seen: Option<(usize, f64)> = None;
     let mut kind_first: HashMap<&'static str, usize> = HashMap::new();
@@ -573,5 +748,209 @@ mod tests {
         );
         let out = lints(&yaml);
         assert_eq!(out.len(), 3, "{out:?}");
+    }
+
+    #[test]
+    fn a_consumer_reading_a_declared_column_is_clean() {
+        let yaml = format!(
+            "{HEAD}consumers:
+  - {{ name: finance, reads: [id] }}
+columns:
+  id: {{ type: string }}
+"
+        );
+        assert_eq!(lints(&yaml), vec![]);
+    }
+
+    #[test]
+    fn a_consumer_that_names_no_columns_is_clean() {
+        // Silence means the whole dataset, which is a legitimate answer and the
+        // shape every contract written before `reads` existed already has.
+        let yaml = format!(
+            "{HEAD}consumers:
+  - {{ name: finance }}
+columns:
+  id: {{ type: string }}
+"
+        );
+        assert_eq!(lints(&yaml), vec![]);
+    }
+
+    #[test]
+    fn a_ranked_and_typed_consumer_is_clean() {
+        let yaml = format!(
+            "{HEAD}consumers:
+  - {{ name: exec, kind: dashboard, tier: 1, reads: [id] }}
+  - {{ name: bot, kind: ai_agent, tier: 3 }}
+columns:
+  id: {{ type: string }}
+"
+        );
+        assert_eq!(lints(&yaml), vec![]);
+    }
+
+    #[test]
+    fn a_tier_outside_one_to_three_is_an_error() {
+        // Not a stricter consumer: a typo that would sort above every real one
+        // on every screen downstream, and outrank a tier 1 nobody meant to
+        // outrank.
+        let yaml = format!(
+            "{HEAD}consumers:
+  - {{ name: exec, tier: 0 }}
+columns:
+  id: {{ type: string }}
+"
+        );
+        let out = lints(&yaml);
+        assert_eq!(out.len(), 1, "{out:?}");
+        assert_eq!(out[0].level, LintLevel::Error);
+        assert_eq!(out[0].path, "consumers[0].tier");
+        assert!(out[0].message.contains("outside"), "{out:?}");
+    }
+
+    #[test]
+    fn a_consumer_reading_an_undeclared_column_is_an_error() {
+        let yaml = format!(
+            "{HEAD}consumers:
+  - {{ name: finance, reads: [emial] }}
+columns:
+  email: {{ type: string }}
+"
+        );
+        let out = lints(&yaml);
+        assert_eq!(out.len(), 1, "{out:?}");
+        assert_eq!(out[0].level, LintLevel::Error);
+        assert_eq!(out[0].path, "consumers[0].reads[0]");
+        assert!(out[0].message.contains("does not declare"), "{out:?}");
+        // A typo is the likely cause, so the fix is offered rather than described.
+        assert_eq!(out[0].help.as_deref(), Some("did you mean `email`?"));
+    }
+
+    #[test]
+    fn an_unguessable_column_gets_the_general_advice() {
+        let yaml = format!(
+            "{HEAD}consumers:
+  - {{ name: finance, reads: [zzzzzzzz] }}
+columns:
+  email: {{ type: string }}
+"
+        );
+        let out = lints(&yaml);
+        assert_eq!(out.len(), 1, "{out:?}");
+        assert!(
+            out[0].help.as_deref().unwrap().contains("whole dataset"),
+            "{out:?}"
+        );
+    }
+
+    #[test]
+    fn a_repeated_column_is_a_warning_not_an_error() {
+        // It does not widen the dependency and it does not break anything, so
+        // stopping a register over it would be the bureaucracy that gets the
+        // field left blank.
+        let yaml = format!(
+            "{HEAD}consumers:
+  - {{ name: finance, reads: [id, id] }}
+columns:
+  id: {{ type: string }}
+"
+        );
+        let out = lints(&yaml);
+        assert_eq!(out.len(), 1, "{out:?}");
+        assert_eq!(out[0].level, LintLevel::Warning);
+    }
+
+    #[test]
+    fn an_unnamed_consumer_is_an_error() {
+        let yaml = format!(
+            "{HEAD}consumers:
+  - {{ name: \"  \" }}
+columns:
+  id: {{ type: string }}
+"
+        );
+        let out = lints(&yaml);
+        assert_eq!(out.len(), 1, "{out:?}");
+        assert_eq!(out[0].path, "consumers[0].name");
+    }
+
+    #[test]
+    fn every_bad_column_in_one_consumer_is_reported() {
+        // The lint pass exists to return all findings; fixing one typo and
+        // re-running to find the next is the workflow it was built to avoid.
+        let yaml = format!(
+            "{HEAD}consumers:
+  - {{ name: finance, reads: [nope, alsonope] }}
+columns:
+  id: {{ type: string }}
+"
+        );
+        assert_eq!(lints(&yaml).len(), 2);
+    }
+    #[test]
+    fn half_an_announcement_is_a_warning_not_an_error() {
+        // A date with no warning: the schedule is there and `stability` still
+        // says the column is safe to build on.
+        let c = contract(
+            "apiVersion: v1\ndataset: t\ncolumns:\n  id: { type: string, sunset: 2026-12-31 }\n",
+        );
+        let found = validate(&c);
+        assert_eq!(found.len(), 1, "{found:#?}");
+        assert_eq!(found[0].level, LintLevel::Warning);
+        assert_eq!(found[0].path, "columns.id.stability");
+
+        // And a warning with no date: move, by an unspecified time.
+        let c = contract(
+            "apiVersion: v1\ndataset: t\ncolumns:\n  id: { type: string, stability: deprecated }\n",
+        );
+        let found = validate(&c);
+        assert_eq!(found.len(), 1, "{found:#?}");
+        assert_eq!(found[0].path, "columns.id.sunset");
+
+        // Both halves, and it is clean.
+        let c = contract(
+            "apiVersion: v1\ndataset: t\ncolumns:\n  id: { type: string, stability: deprecated, sunset: 2026-12-31 }\n",
+        );
+        assert_eq!(validate(&c), vec![]);
+    }
+
+    #[test]
+    fn a_sunset_that_is_not_a_date_is_an_error() {
+        for bad in ["31-12-2026", "2026-13-01", "2026-02-30", "2026-2-1", "soon"] {
+            let c = contract(&format!(
+                "apiVersion: v1\ndataset: t\ncolumns:\n  id: {{ type: string, stability: deprecated, sunset: \"{bad}\" }}\n"
+            ));
+            let found = validate(&c);
+            assert!(
+                found
+                    .iter()
+                    .any(|e| e.level == LintLevel::Error && e.path == "columns.id.sunset"),
+                "{bad} was accepted: {found:#?}"
+            );
+        }
+        // A leap day in a leap year is a real date.
+        let c = contract(
+            "apiVersion: v1\ndataset: t\ncolumns:\n  id: { type: string, stability: deprecated, sunset: 2028-02-29 }\n",
+        );
+        assert_eq!(validate(&c), vec![]);
+    }
+
+    #[test]
+    fn a_migration_window_with_no_instructions_is_a_warning() {
+        let c = contract(
+            "apiVersion: v1\ndataset: t\ncolumns:\n  id: { type: string }\nmigration: { window_ends: 2026-12-31 }\n",
+        );
+        let found = validate(&c);
+        assert_eq!(found.len(), 1, "{found:#?}");
+        assert_eq!(found[0].level, LintLevel::Warning);
+        assert_eq!(found[0].path, "migration.note");
+
+        let c = contract(
+            "apiVersion: v1\ndataset: t\ncolumns:\n  id: { type: string }\nmigration: { window_ends: nope, note: move }\n",
+        );
+        let found = validate(&c);
+        assert_eq!(found.len(), 1, "{found:#?}");
+        assert_eq!(found[0].level, LintLevel::Error);
+        assert_eq!(found[0].path, "migration.window_ends");
     }
 }

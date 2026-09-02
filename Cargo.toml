@@ -63,11 +63,18 @@ anyhow = "1"
 # CLI
 clap = { version = "4", features = ["derive", "env", "wrap_help"] }
 owo-colors = "4"
-comfy-table = "7"
 
 # Reporting
 tera = { version = "1", default-features = false }
 quick-junit = "0.7"
+
+# HTTP client (only plexuspact-cli may depend on this: `push`)
+#
+# Bundled Mozilla roots rather than the platform verifier: the binary is shipped
+# statically for musl, macOS and Windows alike, and one root store that travels
+# with it behaves the same everywhere. `rustls` over `native-tls` for the same
+# reason — linking the system OpenSSL would end the fully static Linux build.
+ureq = { version = "3", default-features = false, features = ["rustls"] }
 
 # Runtime utilities
 regex = "1"

@@ -71,10 +71,26 @@ fn render_column(out: &mut String, col: &ColumnProfile) {
                 && col.distinct <= ENUM_SUGGEST_MAX_DISTINCT
                 && !col.distinct_at_least
             {
+                // Name the values when the profile kept them. "9 distinct values
+                // observed" tells the reader an enum is plausible and then makes
+                // them go and find out what it is; the list is the whole point.
+                if col.values_complete && !col.values.is_empty() {
+                    let _ = writeln!(
+                        out,
+                        "    # checks: [{{ enum: [{}] }}]  # every value observed",
+                        col.values.join(", ")
+                    );
+                } else {
+                    let _ = writeln!(
+                        out,
+                        "    # checks: [{{ enum: [...] }}]  # {} distinct value(s) observed",
+                        col.distinct
+                    );
+                }
+            } else if let Some(format) = &col.format {
                 let _ = writeln!(
                     out,
-                    "    # checks: [{{ enum: [...] }}]  # {} distinct value(s) observed",
-                    col.distinct
+                    "    # checks: [{{ format: {format} }}]  # every value matched"
                 );
             } else if let (Some(min_len), Some(max_len)) = (col.min_length, col.max_length) {
                 if min_len == max_len {
@@ -109,6 +125,9 @@ mod tests {
             std: None,
             min_length: Some(2),
             max_length: Some(2),
+            format: None,
+            values: Vec::new(),
+            values_complete: false,
         }
     }
 

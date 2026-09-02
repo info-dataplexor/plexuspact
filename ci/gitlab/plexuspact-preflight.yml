@@ -1,0 +1,120 @@
+# PlexusPact contract preflight for GitLab CI.
+#
+# Ask the registry what this branch's contract would do before it is merged:
+# what changes, who breaks, and whether merging puts it in force or leaves it
+# waiting for an approver. Writes nothing — merging is what registers a
+# contract, and a pipeline that registered on the way past would make itself the
+# author of terms nobody had agreed to.
+#
+# Include it and set the two variables:
+#
+#   include:
+#     - remote: "https://raw.githubusercontent.com/dataplexor/plexuspact/v0.1.0/ci/gitlab/plexuspact-preflight.yml"
+#
+#   plexuspact:preflight:
+#     variables:
+#       PLEXUSPACT_CONTRACT: contracts/user_signups.yaml
+#
+# `PLEXUSPACT_API_KEY` belongs in the project's CI/CD settings as a masked,
+# protected variable — never in this file and never in a job's `variables`.
+#
+# The note on the merge request needs a token that may write to the API. A
+# project access token in `PLEXUSPACT_GITLAB_TOKEN` with the `api` scope is the
+# narrowest thing that works; without it the job still runs and still gates, it
+# just has nowhere to leave the summary.
+
+.plexuspact:install: &plexuspact_install
+  - apk add --no-cache curl jq >/dev/null
+  - |
+    set -eu
+    base="https://github.com/dataplexor/plexuspact/releases/download/v${PLEXUSPACT_VERSION}"
+    asset="plexuspact-v${PLEXUSPACT_VERSION}-x86_64-unknown-linux-musl.tar.gz"
+    curl -fsSL -o "$asset" "${base}/${asset}"
+    curl -fsSL -o SHA256SUMS "${base}/SHA256SUMS"
+    # Verified, not merely downloaded. A supply chain that is checked only when
+    # somebody remembers is not checked.
+    grep " ${asset}\$" SHA256SUMS | sha256sum -c -
+    tar -xzf "$asset" plexuspact && install -m 755 plexuspact /usr/local/bin/
+    plexuspact --version
+
+plexuspact:preflight:
+  stage: test
+  image: alpine:3.20
+  rules:
+    # Only on merge requests: there is no "what would this change" question to
+    # ask about a branch nobody has proposed to merge.
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  variables:
+    PLEXUSPACT_VERSION: "0.1.0"
+    # Path to the contract on this branch. Override it in your own job.
+    PLEXUSPACT_CONTRACT: contracts/user_signups.yaml
+    # The registered dataset to compare against, when this version renames it.
+    # Without it a rename reads as a brand-new dataset with nothing to break.
+    PLEXUSPACT_DATASET: ""
+    # Leave this on. A review that has to notice a passing job's log output is
+    # not a gate.
+    PLEXUSPACT_FAIL_ON_BREAKING: "true"
+  before_script:
+    - *plexuspact_install
+  script:
+    - |
+      set -eu
+      args="diff ${PLEXUSPACT_CONTRACT} --against-registry --json --markdown plexuspact-preflight.md"
+      [ -n "${PLEXUSPACT_DATASET}" ] && args="${args} --dataset ${PLEXUSPACT_DATASET}"
+
+      code=0
+      # shellcheck disable=SC2086
+      plexuspact $args > plexuspact-preflight.json || code=$?
+
+      # Exit 3 is the registry never answering. That is not a passing build: the
+      # question was asked and nothing came back, and a job that calls that "no
+      # breaking changes" stops catching them the first time the network is slow.
+      if [ "$code" = "3" ]; then
+        echo "plexuspact could not reach the registry; nothing was compared" >&2
+        exit 3
+      fi
+
+      verdict="$(jq -r '.verdict // ""' plexuspact-preflight.json)"
+      summary="$(jq -r '.summary // ""' plexuspact-preflight.json)"
+      echo "$summary"
+
+      # The note on the merge request, updated in place rather than appended: a
+      # contract that goes through four pushes should leave one note saying what
+      # is true now, not four saying what used to be.
+      if [ -n "${PLEXUSPACT_GITLAB_TOKEN:-}" ] && [ -s plexuspact-preflight.md ]; then
+        marker="<!-- plexuspact-preflight -->"
+        notes="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/merge_requests/${CI_MERGE_REQUEST_IID}/notes"
+        printf '%s\n\n' "$marker" | cat - plexuspact-preflight.md > body.md
+        jq -Rs '{body: .}' < body.md > body.json
+
+        existing="$(curl -fsSL --header "PRIVATE-TOKEN: ${PLEXUSPACT_GITLAB_TOKEN}" \
+          "${notes}?per_page=100" \
+          | jq -r --arg m "$marker" 'map(select(.body | startswith($m))) | .[0].id // empty' \
+          || echo "")"
+
+        if [ -n "$existing" ]; then
+          curl -fsSL -X PUT --header "PRIVATE-TOKEN: ${PLEXUSPACT_GITLAB_TOKEN}" \
+            --header "Content-Type: application/json" \
+            --data @body.json "${notes}/${existing}" >/dev/null \
+            || echo "could not update the preflight note" >&2
+        else
+          curl -fsSL -X POST --header "PRIVATE-TOKEN: ${PLEXUSPACT_GITLAB_TOKEN}" \
+            --header "Content-Type: application/json" \
+            --data @body.json "${notes}" >/dev/null \
+            || echo "could not post the preflight note" >&2
+        fi
+      fi
+
+      case "$verdict" in
+        invalid) exit 2 ;;
+        breaking)
+          [ "${PLEXUSPACT_FAIL_ON_BREAKING}" = "true" ] && exit 1
+          echo "breaking changes found; not failing the job because PLEXUSPACT_FAIL_ON_BREAKING is off" >&2 ;;
+      esac
+      exit 0
+  artifacts:
+    when: always
+    paths:
+      - plexuspact-preflight.md
+      - plexuspact-preflight.json
+    expire_in: 30 days
