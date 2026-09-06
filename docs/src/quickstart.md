@@ -5,11 +5,11 @@ This tutorial takes you from nothing to a passing validation on a real CSV. Tota
 ## 1. Install (1 minute)
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/dataplexor/plexuspact/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/info-dataplexor/plexuspact/main/install.sh | sh
 plexuspact --version
 ```
 
-(Windows: `irm https://raw.githubusercontent.com/dataplexor/plexuspact/main/install.ps1 | iex` — see [Installation](installation.md) for Homebrew/Scoop/cargo.)
+(Windows: `irm https://raw.githubusercontent.com/info-dataplexor/plexuspact/main/install.ps1 | iex` — see [Installation](installation.md) for Homebrew/Scoop/cargo.)
 
 ## 2. Get some data
 

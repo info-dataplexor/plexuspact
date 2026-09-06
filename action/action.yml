@@ -87,7 +87,7 @@ runs:
         # default; it is never echoed, and never reaches the command line.
         PLEXUSPACT_API_KEY: ${{ inputs.api-key }}
         PLEXUSPACT_API: ${{ inputs.api }}
-        GH_REPO: dataplexor/plexuspact
+        GH_REPO: info-dataplexor/plexuspact
       run: "$GITHUB_ACTION_PATH/run.sh"
 
     - name: Upload HTML report

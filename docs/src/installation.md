@@ -5,19 +5,19 @@ PlexusPact ships as a single static binary — no Python, no JVM, no shared libr
 ## Shell script (Linux, macOS)
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/dataplexor/plexuspact/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/info-dataplexor/plexuspact/main/install.sh | sh
 ```
 
 The script detects your OS/architecture, downloads the release from GitHub Releases, **verifies the SHA256 checksum**, and installs to `~/.local/bin` (or `/usr/local/bin` as a fallback). Pin a version or change the destination with environment variables:
 
 ```sh
-VERSION=0.1.0 INSTALL_DIR=/opt/bin sh -c "$(curl -fsSL https://raw.githubusercontent.com/dataplexor/plexuspact/main/install.sh)"
+VERSION=0.1.0 INSTALL_DIR=/opt/bin sh -c "$(curl -fsSL https://raw.githubusercontent.com/info-dataplexor/plexuspact/main/install.sh)"
 ```
 
 ## PowerShell (Windows)
 
 ```powershell
-irm https://raw.githubusercontent.com/dataplexor/plexuspact/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/info-dataplexor/plexuspact/main/install.ps1 | iex
 ```
 
 Installs to `%LOCALAPPDATA%\Programs\plexuspact` and adds it to your user `PATH`. Pin with `$env:VERSION = "0.1.0"` before running.

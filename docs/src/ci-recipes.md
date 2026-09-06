@@ -144,7 +144,7 @@ one each time:
 
 ```yaml
 include:
-  - remote: "https://raw.githubusercontent.com/dataplexor/plexuspact/v0.1.0/ci/gitlab/plexuspact-preflight.yml"
+  - remote: "https://raw.githubusercontent.com/info-dataplexor/plexuspact/v0.1.0/ci/gitlab/plexuspact-preflight.yml"
 
 plexuspact:preflight:
   variables:
@@ -163,7 +163,7 @@ resources:
   repositories:
     - repository: plexuspact
       type: github
-      name: dataplexor/plexuspact
+      name: info-dataplexor/plexuspact
       ref: refs/tags/v0.1.0
       endpoint: github
 

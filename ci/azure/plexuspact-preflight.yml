@@ -11,7 +11,7 @@
 #     repositories:
 #       - repository: plexuspact
 #         type: github
-#         name: dataplexor/plexuspact
+#         name: info-dataplexor/plexuspact
 #         ref: refs/tags/v0.1.0
 #         endpoint: github
 #

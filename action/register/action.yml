@@ -80,5 +80,5 @@ runs:
         PLEXUSPACT_API_KEY: ${{ inputs.api-key }}
         PLEXUSPACT_API: ${{ inputs.api }}
         GH_TOKEN: ${{ inputs.github-token }}
-        GH_REPO: dataplexor/plexuspact
+        GH_REPO: info-dataplexor/plexuspact
       run: "$GITHUB_ACTION_PATH/run.sh"

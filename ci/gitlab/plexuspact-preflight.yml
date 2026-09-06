@@ -9,7 +9,7 @@
 # Include it and set the two variables:
 #
 #   include:
-#     - remote: "https://raw.githubusercontent.com/dataplexor/plexuspact/v0.1.0/ci/gitlab/plexuspact-preflight.yml"
+#     - remote: "https://raw.githubusercontent.com/info-dataplexor/plexuspact/v0.1.0/ci/gitlab/plexuspact-preflight.yml"
 #
 #   plexuspact:preflight:
 #     variables:

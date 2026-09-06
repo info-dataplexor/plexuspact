@@ -1,14 +1,14 @@
 #!/bin/sh
 # PlexusPact installer for Linux and macOS.
 #
-#   curl -fsSL https://raw.githubusercontent.com/dataplexor/plexuspact/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/info-dataplexor/plexuspact/main/install.sh | sh
 #
 # Environment variables:
 #   VERSION      install a specific version (e.g. VERSION=0.1.0); default: latest release
 #   INSTALL_DIR  install directory; default: ~/.local/bin, falling back to /usr/local/bin
 set -eu
 
-REPO="dataplexor/plexuspact"
+REPO="info-dataplexor/plexuspact"
 BIN="plexuspact"
 
 say()  { printf '%s\n' "install.sh: $*"; }

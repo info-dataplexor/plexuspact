@@ -1,13 +1,13 @@
 # PlexusPact installer for Windows (x86_64).
 #
-#   irm https://raw.githubusercontent.com/dataplexor/plexuspact/main/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/info-dataplexor/plexuspact/main/install.ps1 | iex
 #
 # Environment variables:
 #   $env:VERSION      install a specific version (e.g. "0.1.0"); default: latest release
 #   $env:INSTALL_DIR  install directory; default: $env:LOCALAPPDATA\Programs\plexuspact
 $ErrorActionPreference = "Stop"
 
-$Repo = "dataplexor/plexuspact"
+$Repo = "info-dataplexor/plexuspact"
 $Bin = "plexuspact"
 $Target = "x86_64-pc-windows-msvc"
 
