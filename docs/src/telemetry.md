@@ -12,7 +12,7 @@ data we collect. The rest of this page draws that line properly.
 ## The telemetry policy
 
 If usage telemetry is ever added (it is under consideration to measure adoption —
-see [ADR-006](https://github.com/dataplexor/plexuspact/blob/main/docs/adr/006-telemetry-policy.md)),
+see [ADR-006](https://github.com/info-dataplexor/plexuspact/blob/main/docs/adr/006-telemetry-policy.md)),
 it will follow these rules, in order of precedence:
 
 1. **Opt-in only.** Telemetry will be off by default. No dark patterns, no

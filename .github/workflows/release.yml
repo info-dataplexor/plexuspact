@@ -104,7 +104,7 @@ jobs:
           cat SHA256SUMS
 
       # SLSA build provenance for every published archive (verify later with
-      # `gh attestation verify <file> --repo dataplexor/plexuspact`).
+      # `gh attestation verify <file> --repo info-dataplexor/plexuspact`).
       - name: Attest build provenance
         uses: actions/attest-build-provenance@v2
         with:
@@ -113,7 +113,7 @@ jobs:
       # Keyless (Fulcio/Rekor) signature over the checksum manifest, so a
       # substituted SHA256SUMS is detectable (doc 03 §11). Verify with:
       #   cosign verify-blob SHA256SUMS --bundle SHA256SUMS.sigstore.json \
-      #     --certificate-identity-regexp 'https://github.com/dataplexor/plexuspact/.*' \
+      #     --certificate-identity-regexp 'https://github.com/info-dataplexor/plexuspact/.*' \
       #     --certificate-oidc-issuer https://token.actions.githubusercontent.com
       - name: Install cosign
         uses: sigstore/cosign-installer@v3

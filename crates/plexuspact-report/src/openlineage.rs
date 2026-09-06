@@ -21,7 +21,7 @@ use serde_json::{json, Map, Value};
 use crate::RenderError;
 
 /// Source repository, used to build the OpenLineage `producer`/`_producer` URIs.
-const REPO: &str = "https://github.com/dataplexor/plexuspact";
+const REPO: &str = "https://github.com/info-dataplexor/plexuspact";
 /// Pinned OpenLineage core spec version for the event `schemaURL`.
 const OL_SPEC: &str = "https://openlineage.io/spec/2-0-2/OpenLineage.json#/$defs/RunEvent";
 /// Published schema for the data-quality assertions facet.

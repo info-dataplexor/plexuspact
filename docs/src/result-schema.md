@@ -4,7 +4,7 @@
 
 ## Versioning policy
 
-The document carries `result_schema_version`. Within version `1`, changes are **additive only**: new fields may appear, but existing fields are never renamed, removed, or repurposed. Consumers must ignore unknown fields. A field's meaning changing would require `result_schema_version: 2`. See [ADR-007](https://github.com/dataplexor/plexuspact/blob/main/docs/adr/007-result-schema-versioning.md).
+The document carries `result_schema_version`. Within version `1`, changes are **additive only**: new fields may appear, but existing fields are never renamed, removed, or repurposed. Consumers must ignore unknown fields. A field's meaning changing would require `result_schema_version: 2`. See [ADR-007](https://github.com/info-dataplexor/plexuspact/blob/main/docs/adr/007-result-schema-versioning.md).
 
 ## Example
 

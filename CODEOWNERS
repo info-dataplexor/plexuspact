@@ -1,17 +1,17 @@
 # Default owners for everything in the repo, unless a later match takes precedence.
-* @dataplexor/maintainers
+* @info-dataplexor/maintainers
 
 # Rust workspace — engine reviewers.
-/crates/ @dataplexor/engine
-/xtask/ @dataplexor/engine
-/Cargo.toml @dataplexor/engine
-/deny.toml @dataplexor/engine
+/crates/ @info-dataplexor/engine
+/xtask/ @info-dataplexor/engine
+/Cargo.toml @info-dataplexor/engine
+/deny.toml @info-dataplexor/engine
 
 # Distribution surface — changes here affect every user's install path.
-/action/ @dataplexor/release
-/install.sh @dataplexor/release
-/install.ps1 @dataplexor/release
-/.github/workflows/ @dataplexor/release
+/action/ @info-dataplexor/release
+/install.sh @info-dataplexor/release
+/install.ps1 @info-dataplexor/release
+/.github/workflows/ @info-dataplexor/release
 
 # Docs and ADRs.
-/docs/ @dataplexor/docs @dataplexor/maintainers
+/docs/ @info-dataplexor/docs @info-dataplexor/maintainers

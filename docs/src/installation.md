@@ -40,12 +40,12 @@ scoop install plexuspact
 Requires a recent stable Rust toolchain (MSRV 1.80):
 
 ```sh
-cargo install --git https://github.com/dataplexor/plexuspact plexuspact-cli
+cargo install --git https://github.com/info-dataplexor/plexuspact plexuspact-cli
 ```
 
 ## Manual download
 
-Grab an archive and `SHA256SUMS` from the [releases page](https://github.com/dataplexor/plexuspact/releases), verify, and put the binary on your `PATH`:
+Grab an archive and `SHA256SUMS` from the [releases page](https://github.com/info-dataplexor/plexuspact/releases), verify, and put the binary on your `PATH`:
 
 ```sh
 sha256sum -c --ignore-missing SHA256SUMS

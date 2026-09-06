@@ -6,8 +6,8 @@ language = "en"
 src = "src"
 
 [output.html]
-git-repository-url = "https://github.com/dataplexor/plexuspact"
-edit-url-template = "https://github.com/dataplexor/plexuspact/edit/main/docs/{path}"
+git-repository-url = "https://github.com/info-dataplexor/plexuspact"
+edit-url-template = "https://github.com/info-dataplexor/plexuspact/edit/main/docs/{path}"
 site-url = "/plexuspact/"
 
 [output.html.search]

@@ -29,4 +29,4 @@ and get a `MIGRATION.md` entry.
 - GitHub Action inputs `api-key`, `api`, `redact-samples`, `require-push`, and a `run-url` output.
 - mdBook documentation site and ADRs 001–010, 013.
 
-[Unreleased]: https://github.com/dataplexor/plexuspact/commits/main
+[Unreleased]: https://github.com/info-dataplexor/plexuspact/commits/main

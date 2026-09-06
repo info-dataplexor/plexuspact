@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Before filing: check the [roadmap section of the README](https://github.com/dataplexor/plexuspact#roadmap).
+        Before filing: check the [roadmap section of the README](https://github.com/info-dataplexor/plexuspact#roadmap).
         Some frequent asks are already planned (quarantine mode, AI-assisted authoring — Phase 1.5) or
         deliberately out of scope for now (warehouse connectors, anomaly detection, data repair — Phase 2+).
   - type: textarea

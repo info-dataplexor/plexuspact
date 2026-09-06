@@ -9,7 +9,7 @@ Thanks for helping make bad data fail fast. This document covers dev setup, the 
 3. Clone and verify:
 
    ```sh
-   git clone https://github.com/dataplexor/plexuspact
+   git clone https://github.com/info-dataplexor/plexuspact
    cd plexuspact
    cargo test --workspace
    cargo run -p plexuspact-cli -- --help
@@ -60,4 +60,4 @@ The book lives in `docs/` (mdBook): `mdbook serve docs` and open http://localhos
 
 ## Questions
 
-Open a [discussion](https://github.com/dataplexor/plexuspact/discussions) or an issue. For security reports, do **not** open an issue — see [SECURITY.md](SECURITY.md).
+Open a [discussion](https://github.com/info-dataplexor/plexuspact/discussions) or an issue. For security reports, do **not** open an issue — see [SECURITY.md](SECURITY.md).

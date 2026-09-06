@@ -4,7 +4,7 @@
 
 Please email **security@plexuspact.com** — do **not** open a public issue for security reports. Include a description, reproduction steps, and the affected version. We aim to acknowledge within 48 hours and to ship a fix or mitigation for confirmed issues within 30 days. We will credit reporters in the release notes unless you prefer otherwise.
 
-If you cannot use email, GitHub's [private vulnerability reporting](https://github.com/dataplexor/plexuspact/security/advisories/new) on this repository is also monitored.
+If you cannot use email, GitHub's [private vulnerability reporting](https://github.com/info-dataplexor/plexuspact/security/advisories/new) on this repository is also monitored.
 
 ## Supported versions
 

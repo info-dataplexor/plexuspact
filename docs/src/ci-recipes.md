@@ -16,14 +16,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dataplexor/plexuspact/action@v0.1.0
+      - uses: info-dataplexor/plexuspact/action@v0.1.0
         with:
           contract: contracts/user_signups.yaml
           data: export/signups.csv
           strict: "true"
 ```
 
-Inputs, outputs, and non-blocking mode are documented in the [action README](https://github.com/dataplexor/plexuspact/blob/main/action/README.md).
+Inputs, outputs, and non-blocking mode are documented in the [action README](https://github.com/info-dataplexor/plexuspact/blob/main/action/README.md).
 
 Add `api-key: ${{ secrets.PLEXUSPACT_API_KEY }}` and every run this workflow
 produces is [kept as history](cloud.md), with the run's URL surfaced as a workflow
@@ -51,7 +51,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dataplexor/plexuspact/action/preflight@v0.1.0
+      - uses: info-dataplexor/plexuspact/action/preflight@v0.1.0
         with:
           contract: contracts/user_signups.yaml
           api-key: ${{ secrets.PLEXUSPACT_API_KEY }}
@@ -92,7 +92,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dataplexor/plexuspact/action/register@v0.1.0
+      - uses: info-dataplexor/plexuspact/action/register@v0.1.0
         with:
           contract: contracts/user_signups.yaml
           api-key: ${{ secrets.PLEXUSPACT_API_KEY }}
@@ -117,9 +117,9 @@ data-contract:
     - apk add --no-cache curl
     - |
       curl -fsSL -o plexuspact.tar.gz \
-        "https://github.com/dataplexor/plexuspact/releases/download/v${PLEXUSPACT_VERSION}/plexuspact-v${PLEXUSPACT_VERSION}-x86_64-unknown-linux-musl.tar.gz"
+        "https://github.com/info-dataplexor/plexuspact/releases/download/v${PLEXUSPACT_VERSION}/plexuspact-v${PLEXUSPACT_VERSION}-x86_64-unknown-linux-musl.tar.gz"
       curl -fsSL -o SHA256SUMS \
-        "https://github.com/dataplexor/plexuspact/releases/download/v${PLEXUSPACT_VERSION}/SHA256SUMS"
+        "https://github.com/info-dataplexor/plexuspact/releases/download/v${PLEXUSPACT_VERSION}/SHA256SUMS"
       grep "plexuspact-v${PLEXUSPACT_VERSION}-x86_64-unknown-linux-musl.tar.gz" SHA256SUMS | sed 's| .*| plexuspact.tar.gz|' | sha256sum -c -
       tar -xzf plexuspact.tar.gz plexuspact && install -m 755 plexuspact /usr/local/bin/
   script:

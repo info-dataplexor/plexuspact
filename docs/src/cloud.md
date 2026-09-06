@@ -52,7 +52,7 @@ The [GitHub Action](ci-recipes.md#github-actions) takes the key as an input and
 does the same thing:
 
 ```yaml
-      - uses: dataplexor/plexuspact/action@v0.1.0
+      - uses: info-dataplexor/plexuspact/action@v0.1.0
         with:
           contract: contracts/user_signups.yaml
           data: export/signups.csv
@@ -139,4 +139,4 @@ but localhost.
 
 This is not telemetry. Nothing is collected about you, and nothing is sent that
 you did not address to your own project. See the [telemetry and network
-policy](telemetry.md) and [ADR-013](https://github.com/dataplexor/plexuspact/blob/main/docs/adr/013-cloud-reporting-boundary.md).
+policy](telemetry.md) and [ADR-013](https://github.com/info-dataplexor/plexuspact/blob/main/docs/adr/013-cloud-reporting-boundary.md).

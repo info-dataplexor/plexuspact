@@ -1,6 +1,6 @@
 # PlexusPact GitHub Action
 
-The official composite action for running [`plexuspact check`](https://github.com/dataplexor/plexuspact) in CI. It:
+The official composite action for running [`plexuspact check`](https://github.com/info-dataplexor/plexuspact) in CI. It:
 
 1. downloads a **pinned** release binary for the runner OS (Linux musl, macOS x86_64/arm64, Windows MSVC),
 2. verifies it against the release's `SHA256SUMS`,
@@ -25,7 +25,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Validate signups export against its contract
-        uses: dataplexor/plexuspact/action@v0.1.0
+        uses: info-dataplexor/plexuspact/action@v0.1.0
         with:
           contract: contracts/user_signups.yaml
           data: export/signups.csv
@@ -62,7 +62,7 @@ is getting better or worse, and that is the thing you can take into a renewal.
 Add one secret and every run this workflow produces is kept:
 
 ```yaml
-      - uses: dataplexor/plexuspact/action@v0.1.0
+      - uses: info-dataplexor/plexuspact/action@v0.1.0
         with:
           contract: contracts/user_signups.yaml
           data: export/signups.csv
@@ -80,7 +80,7 @@ To surface failures without failing the job (e.g. while rolling a contract out),
 
 ```yaml
       - id: contract
-        uses: dataplexor/plexuspact/action@v0.1.0
+        uses: info-dataplexor/plexuspact/action@v0.1.0
         continue-on-error: true
         with:
           contract: contracts/user_signups.yaml

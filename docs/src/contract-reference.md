@@ -68,7 +68,7 @@ The validation engine never reads any of this — a consumer changes no verdict,
 
 ### Reserved fields: `pii`, `classification`
 
-These two ship in the v1 schema **now** but drive no engine behavior: they are parsed, validated, and echoed into the JSON result and HTML report — nothing more. They exist because contract schemas are painful to change once committed across many repos, and compliance-evidence reporting depends on them. Tag PII columns today; get coverage reporting later without touching a single contract. See [ADR-010](https://github.com/dataplexor/plexuspact/blob/main/docs/adr/010-reserved-schema-fields.md).
+These two ship in the v1 schema **now** but drive no engine behavior: they are parsed, validated, and echoed into the JSON result and HTML report — nothing more. They exist because contract schemas are painful to change once committed across many repos, and compliance-evidence reporting depends on them. Tag PII columns today; get coverage reporting later without touching a single contract. See [ADR-010](https://github.com/info-dataplexor/plexuspact/blob/main/docs/adr/010-reserved-schema-fields.md).
 
 ## Column definitions
 
@@ -206,7 +206,7 @@ settings:
 
 #### 5. `unique`
 
-No duplicate values. Exact by default (hash set); for very high-cardinality columns opt into approximate counting with HyperLogLog — see [ADR-005](https://github.com/dataplexor/plexuspact/blob/main/docs/adr/005-exact-vs-approx-unique.md).
+No duplicate values. Exact by default (hash set); for very high-cardinality columns opt into approximate counting with HyperLogLog — see [ADR-005](https://github.com/info-dataplexor/plexuspact/blob/main/docs/adr/005-exact-vs-approx-unique.md).
 
 ```yaml
 checks:
@@ -214,7 +214,7 @@ checks:
   - { unique: { approx: true } }    # HLL, constant memory
 ```
 
-Approx mode reports `distinct_estimate` (with `approx: true`) instead of row samples, and only fails when the estimate falls more than 2% below the evaluated row count — ≈2.5σ of the sketch's ±0.81% error, so clean data cannot false-fail. Duplicate counts follow [ADR-009](https://github.com/dataplexor/plexuspact/blob/main/docs/adr/009-duplicate-accounting.md): second-and-later occurrences are the failures.
+Approx mode reports `distinct_estimate` (with `approx: true`) instead of row samples, and only fails when the estimate falls more than 2% below the evaluated row count — ≈2.5σ of the sketch's ±0.81% error, so clean data cannot false-fail. Duplicate counts follow [ADR-009](https://github.com/info-dataplexor/plexuspact/blob/main/docs/adr/009-duplicate-accounting.md): second-and-later occurrences are the failures.
 
 #### 6. `min`
 

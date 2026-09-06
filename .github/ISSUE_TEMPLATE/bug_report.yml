@@ -7,7 +7,7 @@ body:
     attributes:
       value: |
         Thanks for the report. A reproducible bug with a small fixture gets fixed fastest.
-        **Security issues:** do not file them here — see [SECURITY.md](https://github.com/dataplexor/plexuspact/blob/main/SECURITY.md).
+        **Security issues:** do not file them here — see [SECURITY.md](https://github.com/info-dataplexor/plexuspact/blob/main/SECURITY.md).
   - type: input
     id: version
     attributes:

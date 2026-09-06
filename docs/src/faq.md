@@ -18,7 +18,7 @@ There is no telemetry of any kind, and the validation engine has no network clie
 
 ### What platforms are supported?
 
-Prebuilt: x86_64 Linux (fully static musl — runs on Alpine, distroless, anything), macOS Intel and Apple Silicon, x86_64 Windows. Anything else with a Rust target: `cargo install --git https://github.com/dataplexor/plexuspact plexuspact-cli`.
+Prebuilt: x86_64 Linux (fully static musl — runs on Alpine, distroless, anything), macOS Intel and Apple Silicon, x86_64 Windows. Anything else with a Rust target: `cargo install --git https://github.com/info-dataplexor/plexuspact plexuspact-cli`.
 
 ## Data & formats
 
@@ -28,7 +28,7 @@ CSV (with delimiter/quote/encoding options), Parquet, NDJSON, and JSON arrays �
 
 ### How big a file can it handle?
 
-The engine streams in batches, so memory stays roughly constant regardless of file size — the target is a 10 GB CSV in under 60 s on 2 vCPU / 4 GB RAM. One documented exception: exact `unique` on very high-cardinality columns holds one hash per distinct value (~8 bytes each; 100 M distinct ≈ 800 MB). For those columns, use `unique` with `approx: true` (HyperLogLog, constant memory) — see [ADR-005](https://github.com/dataplexor/plexuspact/blob/main/docs/adr/005-exact-vs-approx-unique.md).
+The engine streams in batches, so memory stays roughly constant regardless of file size — the target is a 10 GB CSV in under 60 s on 2 vCPU / 4 GB RAM. One documented exception: exact `unique` on very high-cardinality columns holds one hash per distinct value (~8 bytes each; 100 M distinct ≈ 800 MB). For those columns, use `unique` with `approx: true` (HyperLogLog, constant memory) — see [ADR-005](https://github.com/info-dataplexor/plexuspact/blob/main/docs/adr/005-exact-vs-approx-unique.md).
 
 ### Can it validate a database table?
 
@@ -46,7 +46,7 @@ Start with `plexuspact init data.csv` — it profiles the data and drafts typed 
 
 ### What are the `pii` and `classification` fields for? They don't seem to do anything.
 
-Correct — they are parsed, validated, and echoed into reports, nothing more. They're reserved in the v1 schema because contract schemas are painful to change once committed across many repos, and compliance-evidence reporting anchors on them. Tag PII now, benefit later. See [ADR-010](https://github.com/dataplexor/plexuspact/blob/main/docs/adr/010-reserved-schema-fields.md).
+Correct — they are parsed, validated, and echoed into reports, nothing more. They're reserved in the v1 schema because contract schemas are painful to change once committed across many repos, and compliance-evidence reporting anchors on them. Tag PII now, benefit later. See [ADR-010](https://github.com/info-dataplexor/plexuspact/blob/main/docs/adr/010-reserved-schema-fields.md).
 
 ### And `consumers`?
 
@@ -54,7 +54,7 @@ That one does something now. Naming a consumer, and optionally the columns it `r
 
 ### A check I need is missing.
 
-First try `custom_expr` — any Polars boolean expression. If that's awkward, [file a feature request](https://github.com/dataplexor/plexuspact/issues) with the YAML you wish you could write. Note that some categories are deliberately out of scope for now: anomaly detection / statistical ML checks are Phase 2+, and data *repair* is never in scope (quarantine routes rows; it never mutates them).
+First try `custom_expr` — any Polars boolean expression. If that's awkward, [file a feature request](https://github.com/info-dataplexor/plexuspact/issues) with the YAML you wish you could write. Note that some categories are deliberately out of scope for now: anomaly detection / statistical ML checks are Phase 2+, and data *repair* is never in scope (quarantine routes rows; it never mutates them).
 
 ### How do I stop someone weakening the contract to make CI pass?
 
@@ -82,8 +82,8 @@ It enforces data *contracts*. (The name is a working title — see the project R
 
 ### How do I report a security issue?
 
-Email security@plexuspact.com — see [SECURITY.md](https://github.com/dataplexor/plexuspact/blob/main/SECURITY.md). Please don't open a public issue.
+Email security@plexuspact.com — see [SECURITY.md](https://github.com/info-dataplexor/plexuspact/blob/main/SECURITY.md). Please don't open a public issue.
 
 ### How can I contribute?
 
-See [CONTRIBUTING.md](https://github.com/dataplexor/plexuspact/blob/main/CONTRIBUTING.md) — dev setup takes two commands, and `good first issue` labels are curated.
+See [CONTRIBUTING.md](https://github.com/info-dataplexor/plexuspact/blob/main/CONTRIBUTING.md) — dev setup takes two commands, and `good first issue` labels are curated.

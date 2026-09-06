@@ -1,13 +1,13 @@
 # Exit codes
 
-Exit codes are a contract too. They are deterministic, documented, and stable — scripts and CI systems can branch on them safely. See [ADR-004](https://github.com/dataplexor/plexuspact/blob/main/docs/adr/004-exit-code-convention.md) for the rationale.
+Exit codes are a contract too. They are deterministic, documented, and stable — scripts and CI systems can branch on them safely. See [ADR-004](https://github.com/info-dataplexor/plexuspact/blob/main/docs/adr/004-exit-code-convention.md) for the rationale.
 
 | Code | Meaning | Typical causes |
 |---|---|---|
 | `0` | **Pass.** All error-severity checks passed. | Clean data; or only `warn`-severity failures without `--strict`. |
 | `1` | **Check failures.** At least one error-severity check failed (or a warn-severity one under `--strict`). | Bad data. This is the code your CI gate keys on. |
 | `2` | **Usage or contract error.** The run never validated anything. | Missing file, unreadable input, malformed YAML, unknown check name, invalid regex, bad CLI flags; `--push` with no API key set, or with `--offline`. |
-| `3` | **Internal error.** A bug in plexuspact or an environmental failure. | Out of disk while writing a report, a panic-class defect. Please [file a bug](https://github.com/dataplexor/plexuspact/issues). Also: `--push` was given and the run could not be [recorded](cloud.md). |
+| `3` | **Internal error.** A bug in plexuspact or an environmental failure. | Out of disk while writing a report, a panic-class defect. Please [file a bug](https://github.com/info-dataplexor/plexuspact/issues). Also: `--push` was given and the run could not be [recorded](cloud.md). |
 
 ## Severity interaction
 
