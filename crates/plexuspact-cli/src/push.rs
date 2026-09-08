@@ -23,6 +23,8 @@
 
 use std::time::Duration;
 
+use url::Url;
+
 /// Where runs go when nothing says otherwise.
 const DEFAULT_API: &str = "https://api.plexuspact.com/api/v1";
 
@@ -164,25 +166,42 @@ fn runs_url(base: &str) -> Result<String, PushError> {
 
 /// Build the URL for one endpoint under whatever the user gave as the API base.
 fn endpoint_url(base: &str, endpoint: &str) -> Result<String, PushError> {
-    let trimmed = base.trim_end_matches('/');
-    let (scheme, rest) = match trimmed.split_once("://") {
-        Some(("https", rest)) => ("https", rest),
-        Some(("http", rest)) => ("http", rest),
+    let mut url = Url::parse(base.trim()).map_err(|_| {
+        PushError::with_hint(
+            format!("`{base}` is not an http(s) URL"),
+            format!("set {API_VAR} to the API root, e.g. {DEFAULT_API}"),
+        )
+    })?;
+    match url.scheme() {
+        "https" | "http" => {}
         _ => {
             return Err(PushError::with_hint(
                 format!("`{base}` is not an http(s) URL"),
                 format!("set {API_VAR} to the API root, e.g. {DEFAULT_API}"),
-            ))
+            ));
         }
-    };
-    let host = rest.split(['/', ':']).next().unwrap_or("");
-    if host.is_empty() {
-        return Err(PushError::with_hint(
+    }
+    let host = url.host_str().ok_or_else(|| {
+        PushError::with_hint(
             format!("`{base}` has no host"),
+            format!("set {API_VAR} to the API root, e.g. {DEFAULT_API}"),
+        )
+    })?;
+    if url.query().is_some() || url.fragment().is_some() {
+        return Err(PushError::with_hint(
+            format!("`{base}` must be an API root without a query or fragment"),
             format!("set {API_VAR} to the API root, e.g. {DEFAULT_API}"),
         ));
     }
-    if scheme == "http" && !is_loopback(host) {
+    // `host()` is typed: an IPv6 literal comes back as an address, not the
+    // bracketed `[::1]` text that `host_str()` returns and no parser accepts.
+    let loopback = match url.host() {
+        Some(url::Host::Domain(name)) => name.eq_ignore_ascii_case("localhost"),
+        Some(url::Host::Ipv4(a)) => a.is_loopback(),
+        Some(url::Host::Ipv6(a)) => a.is_loopback(),
+        None => false,
+    };
+    if url.scheme() == "http" && !loopback {
         return Err(PushError::with_hint(
             format!("refusing to send an API key over plain http to `{host}`"),
             "use https, or point at localhost for local testing".to_owned(),
@@ -191,13 +210,10 @@ fn endpoint_url(base: &str, endpoint: &str) -> Result<String, PushError> {
     // `…/runs` pasted as the root is the one shape we know people paste,
     // because it is the one shape the onboarding screen ever printed. Strip it
     // and append what was actually asked for.
-    let root = trimmed.strip_suffix("/runs").unwrap_or(trimmed);
-    Ok(format!("{root}/{endpoint}"))
-}
-
-/// Whether a host is this machine, and so safe to talk to unencrypted.
-fn is_loopback(host: &str) -> bool {
-    matches!(host, "localhost" | "127.0.0.1" | "[::1]" | "::1")
+    let path = url.path().trim_end_matches('/');
+    let root = path.strip_suffix("/runs").unwrap_or(path);
+    url.set_path(&format!("{root}/{endpoint}"));
+    Ok(url.into())
 }
 
 /// POST a `RunResult` document and return where it landed.
@@ -304,9 +320,16 @@ fn rejected(status: u16, body: &str) -> PushError {
     let describe = |fallback: &str| detail.clone().unwrap_or_else(|| fallback.to_owned());
 
     match status {
-        401 | 403 => PushError::with_hint(
+        401 => PushError::with_hint(
             format!("the API key was rejected: {}", describe("not authorized")),
-            format!("check {TOKEN_VAR}; keys are per-project and can be revoked"),
+            format!("check {TOKEN_VAR}; keys are per-project, expire, and can be revoked"),
+        ),
+        // 403 is a live key that is not allowed to do this — the scope it was
+        // minted with does not cover this call. The detail names the scope.
+        403 => PushError::with_hint(
+            format!("the API key is not allowed to do this: {}", describe("missing scope")),
+            "mint a key with the right scope under Settings → API keys and update it in CI"
+                .to_owned(),
         ),
         402 => PushError::with_hint(
             describe("this plan has no runs left this month"),
@@ -383,6 +406,8 @@ mod tests {
             "http://127.0.0.1:8080/api/v1/runs"
         );
         assert!(runs_url("http://localhost:8080/api/v1").is_ok());
+        assert!(runs_url("http://[::1]:8080/api/v1").is_ok());
+        assert!(runs_url("http://127.0.0.2:8080/api/v1").is_ok());
         let err = runs_url("http://example.com/api/v1").unwrap_err();
         assert!(err.message.contains("plain http"));
     }
