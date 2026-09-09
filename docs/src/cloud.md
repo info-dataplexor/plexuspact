@@ -52,7 +52,7 @@ The [GitHub Action](ci-recipes.md#github-actions) takes the key as an input and
 does the same thing:
 
 ```yaml
-      - uses: info-dataplexor/plexuspact/action@v0.1.0
+      - uses: info-dataplexor/plexuspact/action@v0.2.0
         with:
           contract: contracts/user_signups.yaml
           data: export/signups.csv

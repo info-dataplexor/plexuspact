@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: info-dataplexor/plexuspact/action@v0.1.0
+      - uses: info-dataplexor/plexuspact/action@v0.2.0
         with:
           contract: contracts/user_signups.yaml
           data: export/signups.csv
@@ -51,7 +51,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: info-dataplexor/plexuspact/action/preflight@v0.1.0
+      - uses: info-dataplexor/plexuspact/action/preflight@v0.2.0
         with:
           contract: contracts/user_signups.yaml
           api-key: ${{ secrets.PLEXUSPACT_API_KEY }}
@@ -92,7 +92,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: info-dataplexor/plexuspact/action/register@v0.1.0
+      - uses: info-dataplexor/plexuspact/action/register@v0.2.0
         with:
           contract: contracts/user_signups.yaml
           api-key: ${{ secrets.PLEXUSPACT_API_KEY }}
@@ -112,7 +112,7 @@ data-contract:
   stage: test
   image: alpine:3.20
   variables:
-    PLEXUSPACT_VERSION: "0.1.0"
+    PLEXUSPACT_VERSION: "0.2.0"
   before_script:
     - apk add --no-cache curl
     - |
@@ -144,7 +144,7 @@ one each time:
 
 ```yaml
 include:
-  - remote: "https://raw.githubusercontent.com/info-dataplexor/plexuspact/v0.1.0/ci/gitlab/plexuspact-preflight.yml"
+  - remote: "https://raw.githubusercontent.com/info-dataplexor/plexuspact/v0.2.0/ci/gitlab/plexuspact-preflight.yml"
 
 plexuspact:preflight:
   variables:
@@ -164,7 +164,7 @@ resources:
     - repository: plexuspact
       type: github
       name: info-dataplexor/plexuspact
-      ref: refs/tags/v0.1.0
+      ref: refs/tags/v0.2.0
       endpoint: github
 
 steps:
@@ -191,7 +191,7 @@ matches `rev` once and cache it under `~/.cache/plexuspact`.
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/info-dataplexor/plexuspact
-    rev: v0.1.0
+    rev: v0.2.0
     hooks:
       - id: plexuspact-validate-contract   # parse + lint every staged contract
       - id: plexuspact-diff                # refuse a change that breaks consumers (vs HEAD)

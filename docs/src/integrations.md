@@ -130,7 +130,7 @@ is `required`, never a side effect). Add it once:
 packages:
   - git: "https://github.com/info-dataplexor/plexuspact.git"
     subdirectory: integrations/dbt
-    revision: v0.1.0
+    revision: v0.2.0
 ```
 
 Warn-severity checks become `severity: warn`; PII, classification, stability and

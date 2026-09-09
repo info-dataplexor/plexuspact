@@ -39,18 +39,9 @@ curl -fsSL https://raw.githubusercontent.com/info-dataplexor/plexuspact/main/ins
 irm https://raw.githubusercontent.com/info-dataplexor/plexuspact/main/install.ps1 | iex
 ```
 
-**Homebrew** _(landing with the v0.1.0 release)_:
-
-```sh
-brew install info-dataplexor/tap/plexuspact
-```
-
-**Scoop** _(landing with the v0.1.0 release)_:
-
-```powershell
-scoop bucket add plexuspact https://github.com/info-dataplexor/scoop-bucket
-scoop install plexuspact
-```
+**Homebrew / Scoop** packages are planned. Until they land, the install scripts
+above and the [release assets](https://github.com/info-dataplexor/plexuspact/releases)
+(signed, with checksums) are the supported paths.
 
 **Cargo (build from source):**
 
@@ -155,7 +146,7 @@ Every check takes an optional `severity: error | warn` (default `error`). See th
 The official GitHub Action downloads a pinned, checksum-verified binary, runs the check, annotates the PR with each failed check, and uploads the HTML report as an artifact:
 
 ```yaml
-- uses: info-dataplexor/plexuspact/action@v0.1.0
+- uses: info-dataplexor/plexuspact/action@v0.2.0
   with:
     contract: contracts/user_signups.yaml
     data: export/signups.csv

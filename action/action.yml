@@ -18,7 +18,7 @@ inputs:
   version:
     description: "plexuspact release version to download (without the leading 'v')."
     required: false
-    default: "0.1.0"
+    default: "0.2.0"
   strict:
     description: "Treat warn-severity failures as errors (adds --strict)."
     required: false

@@ -2,7 +2,7 @@
 # has no native dbt test, so a schema.yml written by
 # `plexuspact export --target dbt` runs unchanged.
 name: plexuspact
-version: 0.1.0
+version: 0.2.0
 config-version: 2
 require-dbt-version: [">=1.5.0", "<2.0.0"]
 macro-paths: ["macros"]

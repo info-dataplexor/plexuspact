@@ -12,7 +12,7 @@ tests are either dbt's own (`not_null`, `unique`, `accepted_values`,
 packages:
   - git: "https://github.com/info-dataplexor/plexuspact.git"
     subdirectory: integrations/dbt
-    revision: v0.1.0   # pin to a release tag
+    revision: v0.2.0   # pin to a release tag
 ```
 
 ```bash

@@ -9,7 +9,7 @@
 # Include it and set the two variables:
 #
 #   include:
-#     - remote: "https://raw.githubusercontent.com/info-dataplexor/plexuspact/v0.1.0/ci/gitlab/plexuspact-preflight.yml"
+#     - remote: "https://raw.githubusercontent.com/info-dataplexor/plexuspact/v0.2.0/ci/gitlab/plexuspact-preflight.yml"
 #
 #   plexuspact:preflight:
 #     variables:
@@ -45,7 +45,7 @@ plexuspact:preflight:
     # ask about a branch nobody has proposed to merge.
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
   variables:
-    PLEXUSPACT_VERSION: "0.1.0"
+    PLEXUSPACT_VERSION: "0.2.0"
     # Path to the contract on this branch. Override it in your own job.
     PLEXUSPACT_CONTRACT: contracts/user_signups.yaml
     # The registered dataset to compare against, when this version renames it.

@@ -25,7 +25,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Validate signups export against its contract
-        uses: info-dataplexor/plexuspact/action@v0.1.0
+        uses: info-dataplexor/plexuspact/action@v0.2.0
         with:
           contract: contracts/user_signups.yaml
           data: export/signups.csv
@@ -38,7 +38,7 @@ jobs:
 |---|---|---|---|
 | `contract` | yes | — | Path to the contract YAML (annotations are anchored to this file) |
 | `data` | yes | — | Dataset to validate (CSV/Parquet/NDJSON/JSON), or `-` for stdin |
-| `version` | no | `0.1.0` | plexuspact release to download, without the leading `v` |
+| `version` | no | `0.2.0` | plexuspact release to download, without the leading `v` |
 | `strict` | no | `"false"` | Treat `warn`-severity failures as errors (`--strict`) |
 | `format` | no | `json` | Results file format (`json` \| `junit` \| `human`). PR annotations require `json` |
 | `report-artifact` | no | `plexuspact-report` | Artifact name for the HTML report; empty string skips the upload |
@@ -62,7 +62,7 @@ is getting better or worse, and that is the thing you can take into a renewal.
 Add one secret and every run this workflow produces is kept:
 
 ```yaml
-      - uses: info-dataplexor/plexuspact/action@v0.1.0
+      - uses: info-dataplexor/plexuspact/action@v0.2.0
         with:
           contract: contracts/user_signups.yaml
           data: export/signups.csv
@@ -80,7 +80,7 @@ To surface failures without failing the job (e.g. while rolling a contract out),
 
 ```yaml
       - id: contract
-        uses: info-dataplexor/plexuspact/action@v0.1.0
+        uses: info-dataplexor/plexuspact/action@v0.2.0
         continue-on-error: true
         with:
           contract: contracts/user_signups.yaml
@@ -91,7 +91,7 @@ To surface failures without failing the job (e.g. while rolling a contract out),
 
 ## Notes
 
-- Pin the action to a release tag (`@v0.1.0`). The `version` input and the action tag are independent, but keeping them equal is the supported configuration.
+- Pin the action to a release tag (`@v0.2.0`). The `version` input and the action tag are independent, but keeping them equal is the supported configuration.
 - Runner requirements: `curl` and `jq` (preinstalled on all GitHub-hosted runners).
 - Without an `api-key`, the check runs fully offline apart from the one-time binary download from GitHub Releases — your data never leaves the runner.
 - With an `api-key`, the JSON result is sent to PlexusPact Cloud over HTTPS. That result includes sample failing rows; set `redact-samples: "true"` if those rows are sensitive.

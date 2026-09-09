@@ -11,7 +11,7 @@ curl -fsSL https://raw.githubusercontent.com/info-dataplexor/plexuspact/main/ins
 The script detects your OS/architecture, downloads the release from GitHub Releases, **verifies the SHA256 checksum**, and installs to `~/.local/bin` (or `/usr/local/bin` as a fallback). Pin a version or change the destination with environment variables:
 
 ```sh
-VERSION=0.1.0 INSTALL_DIR=/opt/bin sh -c "$(curl -fsSL https://raw.githubusercontent.com/info-dataplexor/plexuspact/main/install.sh)"
+VERSION=0.2.0 INSTALL_DIR=/opt/bin sh -c "$(curl -fsSL https://raw.githubusercontent.com/info-dataplexor/plexuspact/main/install.sh)"
 ```
 
 ## PowerShell (Windows)
@@ -20,7 +20,7 @@ VERSION=0.1.0 INSTALL_DIR=/opt/bin sh -c "$(curl -fsSL https://raw.githubusercon
 irm https://raw.githubusercontent.com/info-dataplexor/plexuspact/main/install.ps1 | iex
 ```
 
-Installs to `%LOCALAPPDATA%\Programs\plexuspact` and adds it to your user `PATH`. Pin with `$env:VERSION = "0.1.0"` before running.
+Installs to `%LOCALAPPDATA%\Programs\plexuspact` and adds it to your user `PATH`. Pin with `$env:VERSION = "0.2.0"` before running.
 
 ## Homebrew (macOS, Linux)
 
@@ -49,7 +49,7 @@ Grab an archive and `SHA256SUMS` from the [releases page](https://github.com/inf
 
 ```sh
 sha256sum -c --ignore-missing SHA256SUMS
-tar -xzf plexuspact-v0.1.0-x86_64-unknown-linux-musl.tar.gz
+tar -xzf plexuspact-v0.2.0-x86_64-unknown-linux-musl.tar.gz
 sudo install -m 755 plexuspact /usr/local/bin/
 ```
 
@@ -59,7 +59,7 @@ sudo install -m 755 plexuspact /usr/local/bin/
 plexuspact --version
 ```
 
-You should see `plexuspact 0.1.0` (or newer). Now head to the [quickstart](quickstart.md).
+You should see `plexuspact 0.2.0` (or newer). Now head to the [quickstart](quickstart.md).
 
 ## CI
 

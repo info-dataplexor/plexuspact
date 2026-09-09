@@ -2,7 +2,7 @@
 #
 #   repos:
 #     - repo: https://github.com/info-dataplexor/plexuspact
-#       rev: v0.1.0
+#       rev: v0.2.0
 #       hooks:
 #         - id: plexuspact-validate-contract
 #         - id: plexuspact-diff

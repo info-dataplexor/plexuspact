@@ -9,6 +9,8 @@ and get a `MIGRATION.md` entry.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-10
+
 ### Changed
 
 - Minimum supported Rust is 1.88 (was 1.80): the workbook reader needs a calamine that has moved to quick-xml 0.41, which closes RUSTSEC-2026-0194 and RUSTSEC-2026-0195 for attacker-supplied XML.
@@ -48,4 +50,5 @@ and get a `MIGRATION.md` entry.
 - GitHub Action inputs `api-key`, `api`, `redact-samples`, `require-push`, and a `run-url` output.
 - mdBook documentation site and ADRs 001–010, 013.
 
-[Unreleased]: https://github.com/info-dataplexor/plexuspact/commits/main
+[Unreleased]: https://github.com/info-dataplexor/plexuspact/compare/v0.2.0...main
+[0.2.0]: https://github.com/info-dataplexor/plexuspact/releases/tag/v0.2.0

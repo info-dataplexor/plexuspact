@@ -32,7 +32,7 @@ inputs:
   version:
     description: "plexuspact release version to download (without the leading 'v')."
     required: false
-    default: "0.1.0"
+    default: "0.2.0"
   comment:
     description: >-
       Post the summary as a pull-request comment, updating the same comment on
