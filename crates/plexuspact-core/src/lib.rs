@@ -12,12 +12,16 @@ mod run;
 
 pub mod result;
 
-pub use draft::draft_contract;
+pub use draft::{draft_contract, draft_contract_with_input};
 pub use error::CoreError;
+pub use plexuspact_contract::InputSettings;
 pub use plexuspact_engine::{profile, ColumnProfile, DatasetProfile};
 pub use result::{
     CheckMetrics, CheckResult, CheckSeverity, CheckStatus, ConsumerRef, ContractRef, FailureSample,
     ObservedColumnInfo, ObservedSchema, RunResult, RunStatus, RunSummary, SourceInfo,
     RESULT_SCHEMA_VERSION,
 };
-pub use run::{profile_path, run, run_check, RunRequest};
+pub use run::{
+    profile_path, profile_path_with, read_options_for, run, run_check, run_check_with,
+    InputOverrides, RunRequest,
+};

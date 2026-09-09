@@ -213,6 +213,7 @@ fn settings() -> impl Strategy<Value = Settings> {
             allow_extra_columns,
             columns_exact,
             on_type_mismatch,
+            input: Default::default(),
         },
     )
 }

@@ -378,7 +378,8 @@ fn hash_str(s: &str) -> u64 {
 fn is_bool(s: &str) -> bool {
     matches!(
         s.to_ascii_lowercase().as_str(),
-        "true" | "false" | "t" | "f" | "yes" | "no"
+        // What the engine's bool cast accepts, minus `1`/`0` (those are ints).
+        "true" | "false" | "t" | "f" | "yes" | "no" | "y" | "n"
     )
 }
 
@@ -441,10 +442,21 @@ fn is_url(s: &str) -> bool {
     }
 }
 
+/// The forms the engine's `datetime` cast accepts (a bare date is left to
+/// `is_date`, so a column of dates drafts as `date`).
 fn is_datetime(s: &str) -> bool {
+    const NAIVE: &[&str] = &[
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%dT%H:%M:%S%.f",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d %H:%M:%S%.f",
+        "%Y-%m-%dT%H:%M",
+        "%Y-%m-%d %H:%M",
+    ];
     chrono::DateTime::parse_from_rfc3339(s).is_ok()
-        || chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S").is_ok()
-        || chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S").is_ok()
+        || NAIVE
+            .iter()
+            .any(|f| chrono::NaiveDateTime::parse_from_str(s, f).is_ok())
 }
 
 fn fmt_num(x: f64) -> String {

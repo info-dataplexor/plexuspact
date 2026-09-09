@@ -6,6 +6,7 @@
 
 use std::fmt::Write as _;
 
+use plexuspact_contract::InputSettings;
 use plexuspact_engine::{ColumnProfile, DatasetProfile};
 
 /// Threshold under which a low-cardinality string column gets a suggested
@@ -14,6 +15,18 @@ const ENUM_SUGGEST_MAX_DISTINCT: u64 = 12;
 
 /// Renders a draft contract for the profile under the given dataset name.
 pub fn draft_contract(profile: &DatasetProfile, dataset: &str) -> String {
+    draft_contract_with_input(profile, dataset, &InputSettings::default())
+}
+
+/// [`draft_contract`], recording the reading instructions the data was
+/// profiled with under `settings.input` — the sheet, the record element, the
+/// fixed-width layout — so `check` reads the feed the same way without the
+/// flags.
+pub fn draft_contract_with_input(
+    profile: &DatasetProfile,
+    dataset: &str,
+    input: &InputSettings,
+) -> String {
     let mut out = String::new();
     let _ = writeln!(out, "apiVersion: v1");
     let _ = writeln!(out, "dataset: {dataset}");
@@ -42,8 +55,71 @@ pub fn draft_contract(profile: &DatasetProfile, dataset: &str) -> String {
     let _ = writeln!(out, "settings:");
     let _ = writeln!(out, "  allow_extra_columns: true");
     let _ = writeln!(out, "  on_type_mismatch: error");
+    render_input(&mut out, input);
 
     out
+}
+
+/// Renders `settings.input` from what was given; nothing when nothing was.
+fn render_input(out: &mut String, input: &InputSettings) {
+    if input.is_empty() {
+        return;
+    }
+    let _ = writeln!(out, "  input:");
+    if let Some(f) = input.format {
+        let _ = writeln!(out, "    format: {}", f.name());
+    }
+    if let Some(d) = &input.delimiter {
+        let _ = writeln!(out, "    delimiter: {}", yaml_str(d));
+    }
+    if let Some(h) = input.has_header {
+        let _ = writeln!(out, "    has_header: {h}");
+    }
+    if let Some(n) = input.skip_rows {
+        let _ = writeln!(out, "    skip_rows: {n}");
+    }
+    if let Some(p) = &input.json_path {
+        let _ = writeln!(out, "    json_path: {}", yaml_str(p));
+    }
+    if let Some(s) = &input.sheet {
+        let _ = writeln!(out, "    sheet: {}", yaml_str(s));
+    }
+    if let Some(r) = &input.xml_record {
+        let _ = writeln!(out, "    xml_record: {}", yaml_str(r));
+    }
+    if !input.fixed_width.is_empty() {
+        let _ = writeln!(out, "    fixed_width:");
+        for f in &input.fixed_width {
+            let mut parts = vec![format!("name: {}", yaml_str(&f.name))];
+            if let Some(s) = f.start {
+                parts.push(format!("start: {s}"));
+            }
+            if let Some(e) = f.end {
+                parts.push(format!("end: {e}"));
+            }
+            if let Some(w) = f.width {
+                parts.push(format!("width: {w}"));
+            }
+            let _ = writeln!(out, "      - {{ {} }}", parts.join(", "));
+        }
+    }
+}
+
+/// A double-quoted YAML scalar: safe for `;`, `|`, `\t`, a sheet called `2`.
+fn yaml_str(s: &str) -> String {
+    let mut q = String::with_capacity(s.len() + 2);
+    q.push('"');
+    for ch in s.chars() {
+        match ch {
+            '"' => q.push_str("\\\""),
+            '\\' => q.push_str("\\\\"),
+            '\t' => q.push_str("\\t"),
+            '\n' => q.push_str("\\n"),
+            c => q.push(c),
+        }
+    }
+    q.push('"');
+    q
 }
 
 fn render_column(out: &mut String, col: &ColumnProfile) {
@@ -145,5 +221,35 @@ mod tests {
         // `id` had no nulls → required; `plan` had a null → not required.
         assert!(parsed.columns["id"].required);
         assert!(!parsed.columns["plan"].required);
+    }
+
+    #[test]
+    fn draft_records_input_settings() {
+        use plexuspact_contract::{FixedWidthField, InputFormat};
+        let profile = DatasetProfile {
+            rows: 1,
+            columns: vec![col("id", "int", 0)],
+        };
+        let input = InputSettings {
+            format: Some(InputFormat::FixedWidth),
+            delimiter: Some("\t".into()),
+            sheet: Some("2".into()),
+            fixed_width: vec![FixedWidthField {
+                name: "id".into(),
+                start: Some(1),
+                end: Some(4),
+                width: None,
+            }],
+            ..Default::default()
+        };
+        let yaml = draft_contract_with_input(&profile, "ds", &input);
+        let parsed = plexuspact_contract::parse_str(&yaml, "draft").unwrap();
+        assert_eq!(parsed.settings.input, input);
+        assert!(yaml.contains("    format: fixed_width\n"), "{yaml}");
+        assert!(
+            yaml.contains("      - { name: \"id\", start: 1, end: 4 }\n"),
+            "{yaml}"
+        );
+        assert!(!draft_contract(&profile, "ds").contains("input:"));
     }
 }

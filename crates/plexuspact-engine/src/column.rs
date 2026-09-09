@@ -274,6 +274,10 @@ fn parse_date_days(s: &str) -> Option<i32> {
 }
 
 /// Parses an ISO/RFC-3339 datetime into microseconds since the Unix epoch (UTC).
+///
+/// A bare date (`2024-01-01`) is accepted as midnight UTC: a workbook column
+/// of dates, or a partner feed that drops the time part on days with no
+/// events, still fits a `datetime` column instead of failing every row.
 fn parse_datetime_micros(s: &str) -> Option<i64> {
     if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
         return Some(dt.timestamp_micros());
@@ -282,13 +286,22 @@ fn parse_datetime_micros(s: &str) -> Option<i64> {
         "%Y-%m-%dT%H:%M:%S",
         "%Y-%m-%dT%H:%M:%S%.f",
         "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d %H:%M:%S%.f",
+        // Minute precision: spreadsheet exports and mainframe extracts.
+        "%Y-%m-%dT%H:%M",
+        "%Y-%m-%d %H:%M",
     ];
     for fmt in NAIVE {
         if let Ok(ndt) = chrono::NaiveDateTime::parse_from_str(s, fmt) {
             return Some(ndt.and_utc().timestamp_micros());
         }
     }
-    None
+    let day = chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok()?;
+    Some(
+        day.and_time(chrono::NaiveTime::MIN)
+            .and_utc()
+            .timestamp_micros(),
+    )
 }
 
 fn int_series_to_vec(series: &Series) -> Result<Vec<Option<i64>>, EngineError> {
@@ -320,4 +333,35 @@ fn datetime_series_to_micros(series: &Series) -> Result<Vec<Option<i64>>, Engine
     let s = micros.cast(&DataType::Int64)?;
     let ca = s.i64()?;
     Ok(ca.into_iter().collect())
+}
+
+#[cfg(test)]
+mod parse_tests {
+    #![allow(clippy::unwrap_used)]
+
+    use super::*;
+
+    #[test]
+    fn datetime_forms() {
+        let midnight = parse_datetime_micros("2024-01-01T00:00:00Z").unwrap();
+        assert_eq!(parse_datetime_micros("2024-01-01"), Some(midnight));
+        assert_eq!(parse_datetime_micros("2024-01-01T00:00:00"), Some(midnight));
+        assert_eq!(
+            parse_datetime_micros("2024-01-01 00:00:00.000"),
+            Some(midnight)
+        );
+        assert_eq!(
+            parse_datetime_micros("2024-01-01T12:30:00+02:00"),
+            Some(midnight + (10 * 3600 + 30 * 60) * 1_000_000)
+        );
+        assert_eq!(parse_datetime_micros("2024-13-01"), None);
+        assert_eq!(parse_datetime_micros("yesterday"), None);
+        assert_eq!(parse_datetime_micros(""), None);
+    }
+
+    #[test]
+    fn date_forms() {
+        assert_eq!(parse_date_days("1970-01-02"), Some(1));
+        assert_eq!(parse_date_days("1970-01-02T00:00:00"), None);
+    }
 }

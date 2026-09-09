@@ -1,0 +1,24 @@
+apiVersion: v1
+dataset: orders
+columns:
+  id:        { type: int, required: true, checks: [unique] }
+  customer:  { type: string, required: true }
+  amount:    { type: float, required: true, checks: [{ min: 0 }] }
+  currency:  { type: string, required: true, checks: [{ enum: [GBP, USD, EUR] }] }
+  shipped:   { type: bool, required: true }
+  placed_at: { type: datetime, required: true }
+  note:      { type: string }
+settings:
+  allow_extra_columns: true
+  input:
+    format: fixed_width
+    skip_rows: 2
+    has_header: true
+    fixed_width:
+      - { name: id, start: 1, end: 4 }
+      - { name: customer, start: 5, end: 20 }
+      - { name: amount, width: 8 }
+      - { name: currency, width: 3 }
+      - { name: shipped, width: 1 }
+      - { name: placed_at, width: 16 }
+      - { name: note, start: 49, end: 80 }

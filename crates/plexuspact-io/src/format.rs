@@ -1,53 +1,20 @@
 //! Input format and compression detection.
 //!
 //! Detection is extension-based for files (`.csv`, `.tsv`, `.parquet`,
-//! `.ndjson`, `.jsonl`, `.json`, each optionally followed by `.gz` or `.zst`).
-//! Stdin has no extension: compression is sniffed from magic bytes and the
-//! format must be given explicitly (see [`crate::IoError::StdinNeedsFormat`]).
+//! `.ndjson`, `.jsonl`, `.json`, `.xlsx`/`.xlsm`/`.xlsb`/`.xls`/`.ods`, `.xml`,
+//! `.fwf`, each optionally followed by `.gz` or `.zst`). Stdin has no
+//! extension: compression is sniffed from magic bytes and the format must be
+//! given explicitly (see [`crate::IoError::StdinNeedsFormat`]).
+//!
+//! The format enum itself lives in the contract crate, because a contract may
+//! pin it (`settings.input.format`); it is re-exported here so readers and
+//! callers name one type.
 
 use std::path::Path;
 
+pub use plexuspact_contract::InputFormat;
+
 use crate::error::IoError;
-
-/// A supported input data format.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum InputFormat {
-    /// Comma-separated values (delimiter configurable).
-    Csv,
-    /// Tab-separated values (CSV with `\t` as the default delimiter).
-    Tsv,
-    /// Apache Parquet.
-    Parquet,
-    /// Newline-delimited JSON (one JSON object per line).
-    Ndjson,
-    /// A single JSON array of objects. Not streamable — parsed whole.
-    Json,
-}
-
-impl InputFormat {
-    /// Stable lowercase name, used in `RunResult.source.format`.
-    pub fn name(self) -> &'static str {
-        match self {
-            InputFormat::Csv => "csv",
-            InputFormat::Tsv => "tsv",
-            InputFormat::Parquet => "parquet",
-            InputFormat::Ndjson => "ndjson",
-            InputFormat::Json => "json",
-        }
-    }
-
-    /// Parses a format name as given to `--input-format`.
-    pub fn from_name(s: &str) -> Option<InputFormat> {
-        match s.to_ascii_lowercase().as_str() {
-            "csv" => Some(InputFormat::Csv),
-            "tsv" => Some(InputFormat::Tsv),
-            "parquet" => Some(InputFormat::Parquet),
-            "ndjson" | "jsonl" => Some(InputFormat::Ndjson),
-            "json" => Some(InputFormat::Json),
-            _ => None,
-        }
-    }
-}
 
 /// Transparent compression codec of the input container.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -68,6 +35,9 @@ fn format_for_ext(ext: &str) -> Option<InputFormat> {
         "parquet" => Some(InputFormat::Parquet),
         "ndjson" | "jsonl" => Some(InputFormat::Ndjson),
         "json" => Some(InputFormat::Json),
+        "xlsx" | "xlsm" | "xlsb" | "xls" | "ods" => Some(InputFormat::Excel),
+        "xml" => Some(InputFormat::Xml),
+        "fwf" => Some(InputFormat::FixedWidth),
         _ => None,
     }
 }
@@ -85,8 +55,8 @@ fn compression_for_ext(ext: &str) -> Option<Compression> {
 ///
 /// Compound extensions like `data.csv.gz` are handled: the outermost extension
 /// names the compression, the next one the format. `format_override` (from
-/// `--input-format`) replaces the detected *inner* format but never the
-/// compression.
+/// `--input-format` or the contract's `settings.input.format`) replaces the
+/// detected *inner* format but never the compression.
 pub fn detect(
     path: &Path,
     format_override: Option<InputFormat>,
@@ -128,6 +98,16 @@ pub fn sniff_compression(magic: &[u8]) -> Compression {
     }
 }
 
+/// Whether the format needs random access to the whole input (and so is
+/// buffered to a temp file when it arrives compressed or on stdin) rather than
+/// being read as a stream.
+pub(crate) fn needs_random_access(format: InputFormat) -> bool {
+    !matches!(
+        format,
+        InputFormat::Ndjson | InputFormat::Xml | InputFormat::FixedWidth
+    )
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
@@ -163,6 +143,26 @@ mod tests {
     }
 
     #[test]
+    fn office_and_text_layout_extensions() {
+        for ext in ["xlsx", "xlsm", "xlsb", "xls", "ods", "XLSX"] {
+            assert_eq!(
+                det(&format!("book.{ext}")).unwrap(),
+                (InputFormat::Excel, Compression::None),
+                "{ext}"
+            );
+        }
+        assert_eq!(det("a.xml").unwrap(), (InputFormat::Xml, Compression::None));
+        assert_eq!(
+            det("a.fwf").unwrap(),
+            (InputFormat::FixedWidth, Compression::None)
+        );
+        assert_eq!(
+            det("a.xml.gz").unwrap(),
+            (InputFormat::Xml, Compression::Gzip)
+        );
+    }
+
+    #[test]
     fn compound_extensions() {
         assert_eq!(
             det("a.csv.gz").unwrap(),
@@ -186,9 +186,10 @@ mod tests {
 
     #[test]
     fn unknown_extension_is_actionable() {
-        let e = det("data.xlsx").unwrap_err().to_string();
+        let e = det("data.dat").unwrap_err().to_string();
         assert!(e.contains(".csv"), "{e}");
         assert!(e.contains(".parquet"), "{e}");
+        assert!(e.contains(".xlsx"), "{e}");
         assert!(e.contains("--input-format"), "{e}");
     }
 
@@ -212,6 +213,9 @@ mod tests {
     fn from_name_parses() {
         assert_eq!(InputFormat::from_name("CSV"), Some(InputFormat::Csv));
         assert_eq!(InputFormat::from_name("jsonl"), Some(InputFormat::Ndjson));
-        assert_eq!(InputFormat::from_name("xls"), None);
+        assert_eq!(InputFormat::from_name("xls"), Some(InputFormat::Excel));
+        assert_eq!(InputFormat::from_name("fwf"), Some(InputFormat::FixedWidth));
+        assert_eq!(InputFormat::from_name("xml"), Some(InputFormat::Xml));
+        assert_eq!(InputFormat::from_name("dbf"), None);
     }
 }

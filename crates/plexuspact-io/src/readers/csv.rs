@@ -54,6 +54,7 @@ fn read_options(opts: &ReadOptions, format: InputFormat) -> CsvReadOptions {
     };
     CsvReadOptions::default()
         .with_has_header(opts.csv.has_header)
+        .with_skip_rows(opts.csv.skip_rows)
         .with_infer_schema_length(infer)
         .with_chunk_size(opts.batch_rows.max(1))
         .with_ignore_errors(matches!(opts.typing, TypingMode::Inferred))

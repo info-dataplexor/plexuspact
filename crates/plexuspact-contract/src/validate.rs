@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 use std::fmt;
 
-use crate::model::{ColType, ColumnCheck, Contract, DatasetCheck, LengthSpec};
+use crate::model::{ColType, ColumnCheck, Contract, DatasetCheck, InputFormat, LengthSpec};
 
 /// How serious a lint finding is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -138,7 +138,192 @@ pub fn validate(contract: &Contract) -> Vec<LintError> {
         ));
     }
 
+    lint_input(contract, &mut out);
+
     out
+}
+
+/// Lints `settings.input`: the reading instructions must be internally
+/// consistent, and a fixed-width layout must actually be a layout.
+fn lint_input(contract: &Contract, out: &mut Vec<LintError>) {
+    let input = &contract.settings.input;
+    let format = input.format;
+
+    if let Some(d) = &input.delimiter {
+        if d.chars().count() != 1 {
+            out.push(LintError::error(
+                "settings.input.delimiter",
+                format!("`{d}` is not a single character"),
+                Some("the delimiter is one character, e.g. `delimiter: \";\"` or `delimiter: \"\\t\"`".into()),
+            ));
+        }
+    }
+
+    // An option that belongs to one format, on a contract that pins another,
+    // is a mistake somebody should hear about now rather than a silent no-op
+    // at run time. When no format is pinned the file extension decides, and
+    // the option may well apply — no complaint then.
+    let only_for = |applies: &[InputFormat], key: &str, out: &mut Vec<LintError>| {
+        if let Some(f) = format {
+            if !applies.contains(&f) {
+                let names: Vec<&str> = applies.iter().map(|f| f.name()).collect();
+                out.push(LintError::error(
+                    format!("settings.input.{key}"),
+                    format!("`{key}` does not apply to {f} input"),
+                    Some(format!(
+                        "`{key}` is read only for {} input; drop it, or change `format`",
+                        names.join("/")
+                    )),
+                ));
+            }
+        }
+    };
+    if input.delimiter.is_some() {
+        only_for(&[InputFormat::Csv, InputFormat::Tsv], "delimiter", out);
+    }
+    if input.json_path.is_some() {
+        only_for(&[InputFormat::Json], "json_path", out);
+    }
+    if input.sheet.is_some() {
+        only_for(&[InputFormat::Excel], "sheet", out);
+    }
+    if input.xml_record.is_some() {
+        only_for(&[InputFormat::Xml], "xml_record", out);
+    }
+    if input.has_header.is_some() {
+        only_for(
+            &[
+                InputFormat::Csv,
+                InputFormat::Tsv,
+                InputFormat::Excel,
+                InputFormat::FixedWidth,
+            ],
+            "has_header",
+            out,
+        );
+    }
+    if input.skip_rows.is_some() {
+        only_for(
+            &[
+                InputFormat::Csv,
+                InputFormat::Tsv,
+                InputFormat::Excel,
+                InputFormat::FixedWidth,
+            ],
+            "skip_rows",
+            out,
+        );
+    }
+
+    if format == Some(InputFormat::FixedWidth) && input.fixed_width.is_empty() {
+        out.push(LintError::error(
+            "settings.input.fixed_width",
+            "`format: fixed_width` needs the field layout",
+            Some(
+                "list the fields with their character positions, e.g. `fixed_width:\n  - { name: id, start: 1, end: 8 }\n  - { name: amount, width: 12 }`"
+                    .into(),
+            ),
+        ));
+    }
+    if !input.fixed_width.is_empty() {
+        only_for(&[InputFormat::FixedWidth], "fixed_width", out);
+        lint_fixed_width(contract, out);
+    }
+}
+
+/// Lints a fixed-width layout: every field has a width, none overlap, names
+/// are unique, and every declared column is produced by some field.
+fn lint_fixed_width(contract: &Contract, out: &mut Vec<LintError>) {
+    let mut seen: HashMap<&str, usize> = HashMap::new();
+    let mut cursor: u32 = 1; // next free position
+    for (i, f) in contract.settings.input.fixed_width.iter().enumerate() {
+        let path = format!("settings.input.fixed_width[{i}]");
+        if f.name.trim().is_empty() {
+            out.push(LintError::error(
+                format!("{path}.name"),
+                "the field has no name",
+                Some("give every field the column name it is read into".into()),
+            ));
+        }
+        if let Some(prev) = seen.insert(f.name.as_str(), i) {
+            out.push(LintError::error(
+                format!("{path}.name"),
+                format!("`{}` is already the name of field [{prev}]", f.name),
+                Some("field names become column names, so each must be unique".into()),
+            ));
+        }
+        let start = f.start.unwrap_or(cursor);
+        if start == 0 {
+            out.push(LintError::error(
+                format!("{path}.start"),
+                "positions are 1-based; `start: 0` names no character",
+                Some("the first character of the line is position 1".into()),
+            ));
+        }
+        if start < cursor {
+            out.push(LintError::error(
+                format!("{path}.start"),
+                format!(
+                    "`{}` starts at {start}, inside the previous field (which ends at {})",
+                    f.name,
+                    cursor.saturating_sub(1)
+                ),
+                Some("fields lie on the line in order and never overlap; check the layout".into()),
+            ));
+        }
+        let end = match (f.end, f.width) {
+            (Some(_), Some(_)) => {
+                out.push(LintError::error(
+                    format!("{path}.width"),
+                    format!("`{}` gives both `end` and `width`", f.name),
+                    Some("keep one: `end` is the last position, `width` the length".into()),
+                ));
+                f.end
+            }
+            (Some(e), None) => {
+                if e < start {
+                    out.push(LintError::error(
+                        format!("{path}.end"),
+                        format!("`{}` ends at {e}, before it starts at {start}", f.name),
+                        Some("`end` is inclusive and cannot be before `start`".into()),
+                    ));
+                }
+                Some(e)
+            }
+            (None, Some(w)) => {
+                if w == 0 {
+                    out.push(LintError::error(
+                        format!("{path}.width"),
+                        format!("`{}` has width 0", f.name),
+                        Some("a field is at least one character wide".into()),
+                    ));
+                }
+                Some(start + w.saturating_sub(1))
+            }
+            (None, None) => {
+                out.push(LintError::error(
+                    path.to_string(),
+                    format!("`{}` has no `end` and no `width`", f.name),
+                    Some("say where the field stops: `end: 20` (inclusive) or `width: 12`".into()),
+                ));
+                None
+            }
+        };
+        cursor = end.map(|e| e.max(start) + 1).unwrap_or(cursor);
+    }
+
+    for name in contract.columns.keys() {
+        if !seen.contains_key(name.as_str()) {
+            out.push(LintError::warning(
+                format!("columns.{name}"),
+                format!("`{name}` is declared, but no fixed-width field is named `{name}`"),
+                Some(
+                    "add a field for it under `settings.input.fixed_width`, or the column will be reported missing"
+                        .to_string(),
+                ),
+            ));
+        }
+    }
 }
 
 /// Lints one declared consumer.

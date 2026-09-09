@@ -311,7 +311,7 @@
           "description": "How much a consumer may rely on this column staying as it is.\n\nAbsent means [`Stability::Stable`] — the promise every column has always carried, stated out loud rather than assumed."
         },
         "sunset": {
-          "description": "The date after which this column will no longer be here, as `YYYY-MM-DD`.\n\nHeld as a string rather than a date type on purpose: this crate parses contracts on machines that may have no clock worth trusting, and it has no business deciding what \"today\" is. [`crate::validate`] proves the shape and the calendar; ISO-8601 sorts lexicographically, which is all the diff needs to tell a date that moved closer from one that moved away. Anything that acts on the date — refusing a change, chasing the consumers who still read the column — does it where a clock exists.",
+          "description": "The date after which this column will no longer be here, as `YYYY-MM-DD`.\n\nHeld as a string rather than a date type on purpose: this crate parses contracts on machines that may have no clock worth trusting, and it has no business deciding what \"today\" is. [`crate::validate`](fn@crate::validate) proves the shape and the calendar; ISO-8601 sorts lexicographically, which is all the diff needs to tell a date that moved closer from one that moved away. Anything that acts on the date — refusing a change, chasing the consumers who still read the column — does it where a clock exists.",
           "type": [
             "string",
             "null"
@@ -358,14 +358,14 @@
           "type": "string"
         },
         "reads": {
-          "description": "The columns this consumer depends on.\n\n**Empty means the whole dataset**, and that is the honest default: a consumer who has not said which columns they read is a consumer who might break on any of them, and quietly narrowing their blast radius to nothing would make an unanswered question look like a safe answer. Say the columns and the answer gets sharper — a change to `region` stops paging the team that only reads `amount`.\n\nEvery name must be a column the contract declares; [`crate::validate`] rejects the rest, because a typo here is a dependency that silently matches nothing, which is worse than no declaration at all.",
+          "description": "The columns this consumer depends on.\n\n**Empty means the whole dataset**, and that is the honest default: a consumer who has not said which columns they read is a consumer who might break on any of them, and quietly narrowing their blast radius to nothing would make an unanswered question look like a safe answer. Say the columns and the answer gets sharper — a change to `region` stops paging the team that only reads `amount`.\n\nEvery name must be a column the contract declares; [`crate::validate`](fn@crate::validate) rejects the rest, because a typo here is a dependency that silently matches nothing, which is worse than no declaration at all.",
           "items": {
             "type": "string"
           },
           "type": "array"
         },
         "tier": {
-          "description": "How much depends on this one, from 1 (most) to 3 (least).\n\nDeliberately three numbers and not a free-text severity. The point of a tier is to be *comparable* across two consumers nobody has ever had to compare before — the moment somebody has to choose which of two teams finds out first. A scale with five levels, or with words, is a scale where everything ends up in the top two.\n\nAbsent means it has not been ranked, which is not the same as tier 3. [`crate::validate`] proves the range; nothing here decides what a tier is worth, because that is a decision each organisation makes.",
+          "description": "How much depends on this one, from 1 (most) to 3 (least).\n\nDeliberately three numbers and not a free-text severity. The point of a tier is to be *comparable* across two consumers nobody has ever had to compare before — the moment somebody has to choose which of two teams finds out first. A scale with five levels, or with words, is a scale where everything ends up in the top two.\n\nAbsent means it has not been ranked, which is not the same as tier 3. [`crate::validate`](fn@crate::validate) proves the range; nothing here decides what a tier is worth, because that is a decision each organisation makes.",
           "format": "uint8",
           "maximum": 3.0,
           "minimum": 1.0,
@@ -650,6 +650,177 @@
       ],
       "description": "A scalar value allowed inside an `enum` check."
     },
+    "FixedWidthField": {
+      "additionalProperties": false,
+      "description": "One field of a fixed-width record: a name and the character positions (1-based, inclusive) it occupies on every line.\n\nGive `end` or `width`, not both. `start` may be left out on every field but the first, in which case the field begins right after the previous one — the way a layout document usually reads.",
+      "properties": {
+        "end": {
+          "description": "Last character position, 1-based and inclusive.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "Column name the field is read into.",
+          "type": "string"
+        },
+        "start": {
+          "description": "First character position, 1-based. Defaults to the character after the previous field's end (1 for the first field).",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "width": {
+          "description": "Number of characters, as an alternative to `end`.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "InputFormat": {
+      "description": "The on-disk format of a dataset's feed, when the contract pins it (`settings.input.format`). Without it the reader goes by the file extension, which is right for almost everything except a feed that arrives as `export.dat`.",
+      "oneOf": [
+        {
+          "description": "Comma-separated values.",
+          "enum": [
+            "csv"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Tab-separated values.",
+          "enum": [
+            "tsv"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Apache Parquet.",
+          "enum": [
+            "parquet"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Newline-delimited JSON.",
+          "enum": [
+            "ndjson"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "One JSON array of records.",
+          "enum": [
+            "json"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "An Excel workbook (`.xlsx`, `.xlsm`, `.xlsb`, `.xls`) or OpenDocument spreadsheet (`.ods`). One sheet is the dataset; see `sheet`.",
+          "enum": [
+            "excel"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "An XML document with one element per record; see `xml_record`.",
+          "enum": [
+            "xml"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Fixed-width text, one record per line, columns by character position; see `fixed_width`.",
+          "enum": [
+            "fixed_width"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "InputSettings": {
+      "additionalProperties": false,
+      "description": "How the feed is read (`settings.input`). Everything here is optional and most contracts need none of it: a `.csv` is a CSV. It exists for the feeds that need telling — the workbook whose data is on the third sheet under two title rows, the XML export whose records are `<Order>` elements, the mainframe extract with no delimiters at all.\n\nReading instructions belong in the contract rather than on the command line because the contract is what travels: the same file read the same way in CI, in the cloud's SFTP pickup and on a laptop, without each remembering the flags.",
+      "properties": {
+        "delimiter": {
+          "description": "CSV/TSV: the field delimiter, one character (default `,` for CSV, tab for TSV). Write a tab as `\"\\t\"`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fixed_width": {
+          "description": "Fixed-width: the fields, in the order they lie on the line.",
+          "items": {
+            "$ref": "#/definitions/FixedWidthField"
+          },
+          "type": "array"
+        },
+        "format": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/InputFormat"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Pin the format instead of going by the file extension."
+        },
+        "has_header": {
+          "description": "CSV/TSV/Excel/fixed-width: whether the first row names the columns. Default `true`, except fixed-width, where the fields carry the names and the default is `false`.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "json_path": {
+          "description": "JSON: dotted path to the record array inside a wrapping object (`data.items`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sheet": {
+          "description": "Excel: the sheet holding the data, by name or 1-based position (default: the first sheet).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "skip_rows": {
+          "description": "Excel/CSV/fixed-width: rows to skip before the header (title rows, blank lines a report writer leaves at the top).",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "xml_record": {
+          "description": "XML: the element that is one record — a name (`order`) or a path from the root (`orders/order`). Default: the root's first child element.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
     "KnownFormat": {
       "description": "Built-in value formats accepted by the `format` check.",
       "oneOf": [
@@ -858,6 +1029,14 @@
           "default": false,
           "description": "Whether the dataset must contain *exactly* the declared columns (default `false`).",
           "type": "boolean"
+        },
+        "input": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/InputSettings"
+            }
+          ],
+          "description": "How the feed is read — format, sheet, XML record element, fixed-width layout. Left out of YAML output when nothing is set."
         },
         "on_type_mismatch": {
           "allOf": [

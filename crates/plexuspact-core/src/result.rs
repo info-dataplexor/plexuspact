@@ -114,7 +114,8 @@ pub struct ConsumerRef {
 pub struct SourceInfo {
     /// File path, or `-` for stdin.
     pub path: String,
-    /// Detected or forced input format (`csv`, `parquet`, `ndjson`, `json`).
+    /// Detected or forced input format (`csv`, `tsv`, `parquet`, `ndjson`,
+    /// `json`, `excel`, `xml`, `fixed_width`).
     pub format: String,
     /// Total rows read.
     pub rows: u64,

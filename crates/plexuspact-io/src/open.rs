@@ -1,15 +1,16 @@
 //! Opening a [`Source`] as a [`BatchSource`]: format detection, transparent
 //! decompression, and stdin handling.
 //!
-//! Decompression strategy: NDJSON is decompressed *streaming* (constant
-//! memory). Formats that need random access (CSV batched reader, Parquet
-//! footer, JSON whole-parse) are decompressed to a temporary file first; the
-//! temp file lives as long as the returned source.
+//! Decompression strategy: the line- and event-oriented formats (NDJSON, XML,
+//! fixed-width) are decompressed *streaming* (constant memory). Formats that
+//! need random access (CSV batched reader, Parquet footer, JSON whole-parse,
+//! workbooks) are decompressed to a temporary file first; the temp file lives
+//! as long as the returned source.
 //!
 //! Stdin rules: an explicit format is required (no extension to sniff);
 //! compression is sniffed from magic bytes; Parquet on stdin is rejected
-//! (needs random access to the footer); CSV/JSON from stdin are buffered to a
-//! temp file; NDJSON streams directly.
+//! (needs random access to the footer); CSV/JSON/Excel from stdin are buffered
+//! to a temp file; NDJSON, XML and fixed-width stream directly.
 
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -21,12 +22,15 @@ use tempfile::NamedTempFile;
 
 use crate::batch::{BatchSource, InputTyping};
 use crate::error::IoError;
-use crate::format::{detect, sniff_compression, Compression, InputFormat};
+use crate::format::{detect, needs_random_access, sniff_compression, Compression, InputFormat};
 use crate::options::ReadOptions;
 use crate::readers::csv::CsvBatchSource;
+use crate::readers::excel::ExcelBatchSource;
+use crate::readers::fixed_width::FixedWidthBatchSource;
 use crate::readers::json::JsonBatchSource;
 use crate::readers::ndjson::NdjsonBatchSource;
 use crate::readers::parquet::ParquetBatchSource;
+use crate::readers::xml::XmlBatchSource;
 use crate::source::Source;
 
 /// Keeps a temp file alive for as long as its reader.
@@ -68,7 +72,7 @@ pub fn open(source: &Source, opts: &ReadOptions) -> Result<Box<dyn BatchSource>,
 fn open_file(path: &Path, opts: &ReadOptions) -> Result<Box<dyn BatchSource>, IoError> {
     let display = path.display().to_string();
     let (format, compression) = detect(path, opts.format)?;
-    ensure_json_path_applicable(format, opts, &display)?;
+    ensure_options_applicable(format, opts, &display)?;
     let file = File::open(path).map_err(|source| IoError::MissingFile {
         path: display.clone(),
         source,
@@ -81,22 +85,15 @@ fn open_file(path: &Path, opts: &ReadOptions) -> Result<Box<dyn BatchSource>, Io
     match compression {
         Compression::None => open_plain_file(file, format, opts, &display, size),
         Compression::Gzip | Compression::Zstd => {
-            if format == InputFormat::Ndjson {
-                // Stream-decompress NDJSON: constant memory, no temp file.
-                let (reader, codec) =
-                    decompress_stream(Box::new(BufReader::new(file)), compression, &display)?;
-                Ok(Box::new(NdjsonBatchSource::from_reader(
-                    reader,
-                    opts.batch_rows,
-                    stringly(opts),
-                    &display,
-                    Some(codec),
-                    size,
-                )?))
-            } else {
+            if needs_random_access(format) {
                 let temp = decompress_to_temp(file, compression, &display)?;
                 let inner = open_plain_file(reopen_temp(&temp)?, format, opts, &display, size)?;
                 Ok(Box::new(WithTempGuard { inner, _temp: temp }))
+            } else {
+                // Stream-decompress: constant memory, no temp file.
+                let (reader, codec) =
+                    decompress_stream(Box::new(BufReader::new(file)), compression, &display)?;
+                open_stream(reader, format, opts, &display, Some(codec), size)
             }
         }
     }
@@ -120,14 +117,6 @@ fn open_plain_file(
             display,
             size,
         )?)),
-        InputFormat::Ndjson => Ok(Box::new(NdjsonBatchSource::from_reader(
-            Box::new(BufReader::new(file)),
-            opts.batch_rows,
-            stringly(opts),
-            display,
-            None,
-            size,
-        )?)),
         InputFormat::Json => Ok(Box::new(JsonBatchSource::from_file(
             file,
             opts.batch_rows,
@@ -136,12 +125,75 @@ fn open_plain_file(
             size,
             opts.json_path.as_deref(),
         )?)),
+        InputFormat::Excel => Ok(Box::new(ExcelBatchSource::from_file(
+            file, opts, display, size,
+        )?)),
+        InputFormat::Ndjson | InputFormat::Xml | InputFormat::FixedWidth => open_stream(
+            Box::new(BufReader::new(file)),
+            format,
+            opts,
+            display,
+            None,
+            size,
+        ),
     }
 }
 
-/// `--json-path` is meaningful only for JSON input; reject it on any other
-/// format up front so the user gets a targeted error, not a silent no-op.
-fn ensure_json_path_applicable(
+/// Opens an already-decoded byte stream as one of the streamable formats.
+fn open_stream(
+    reader: Box<dyn BufRead + Send>,
+    format: InputFormat,
+    opts: &ReadOptions,
+    display: &str,
+    codec: Option<&'static str>,
+    size: Option<u64>,
+) -> Result<Box<dyn BatchSource>, IoError> {
+    match format {
+        InputFormat::Ndjson => Ok(Box::new(NdjsonBatchSource::from_reader(
+            reader,
+            opts.batch_rows,
+            stringly(opts),
+            display,
+            codec,
+            size,
+        )?)),
+        InputFormat::Xml => Ok(Box::new(XmlBatchSource::from_reader(
+            reader,
+            opts.xml.record.as_deref(),
+            opts.batch_rows,
+            display,
+            codec,
+            size,
+        )?)),
+        InputFormat::FixedWidth => {
+            let layout =
+                opts.fixed_width
+                    .as_ref()
+                    .ok_or_else(|| IoError::FixedWidthNeedsLayout {
+                        path: display.to_string(),
+                    })?;
+            Ok(Box::new(FixedWidthBatchSource::from_reader(
+                reader,
+                layout,
+                opts.batch_rows,
+                display,
+                codec,
+                size,
+            )?))
+        }
+        // `needs_random_access` routes these to `open_plain_file`.
+        InputFormat::Csv
+        | InputFormat::Tsv
+        | InputFormat::Parquet
+        | InputFormat::Json
+        | InputFormat::Excel => unreachable!("{} is not a streamable format", format.name()),
+    }
+}
+
+/// Rejects options that cannot apply to the format up front, so the user gets
+/// a targeted error rather than a silent no-op (or a decompression pass that
+/// ends in the same error).
+fn ensure_options_applicable(
     format: InputFormat,
     opts: &ReadOptions,
     display: &str,
@@ -149,7 +201,12 @@ fn ensure_json_path_applicable(
     if opts.json_path.is_some() && format != InputFormat::Json {
         return Err(IoError::JsonPathWrongFormat {
             path: display.to_string(),
-            format: format.name_static(),
+            format: format.name(),
+        });
+    }
+    if format == InputFormat::FixedWidth && opts.fixed_width.is_none() {
+        return Err(IoError::FixedWidthNeedsLayout {
+            path: display.to_string(),
         });
     }
     Ok(())
@@ -168,11 +225,11 @@ pub fn open_reader(
     if format == InputFormat::Parquet {
         return Err(IoError::ParquetOnStdin);
     }
-    ensure_json_path_applicable(format, opts, display)?;
+    ensure_options_applicable(format, opts, display)?;
     let mut buffered = BufReader::new(reader);
     let magic = buffered.fill_buf().map_err(|source| IoError::Malformed {
         path: display.to_string(),
-        format: format.name_static(),
+        format: format.name(),
         position: String::new(),
         detail: source.to_string(),
     })?;
@@ -190,35 +247,19 @@ pub fn open_reader(
         }
     };
 
-    match format {
-        InputFormat::Ndjson => Ok(Box::new(NdjsonBatchSource::from_reader(
-            decoded,
-            opts.batch_rows,
-            stringly(opts),
-            display,
-            codec,
-            None,
-        )?)),
-        InputFormat::Csv | InputFormat::Tsv | InputFormat::Json => {
-            // These readers need random access: buffer the stream to a temp file.
-            let temp = stream_to_temp(decoded, codec, display)?;
-            let inner = open_plain_file(reopen_temp(&temp)?, format, opts, display, None)?;
-            Ok(Box::new(WithTempGuard { inner, _temp: temp }))
-        }
-        InputFormat::Parquet => Err(IoError::ParquetOnStdin),
+    if needs_random_access(format) {
+        // These readers need random access: buffer the stream to a temp file.
+        let temp = stream_to_temp(decoded, codec, display)?;
+        let inner = open_plain_file(reopen_temp(&temp)?, format, opts, display, None)?;
+        Ok(Box::new(WithTempGuard { inner, _temp: temp }))
+    } else {
+        open_stream(decoded, format, opts, display, codec, None)
     }
 }
 
 /// Whether the options ask for stringly typing.
 fn stringly(opts: &ReadOptions) -> bool {
     matches!(opts.typing, crate::options::TypingMode::Stringly)
-}
-
-impl InputFormat {
-    /// `name()` with a `'static` lifetime for error structs.
-    fn name_static(self) -> &'static str {
-        self.name()
-    }
 }
 
 /// Wraps a buffered stream in the right decompressor.

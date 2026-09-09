@@ -8,14 +8,26 @@
 //!
 //! Every reader implements [`BatchSource`]: an iterator-style interface that
 //! yields row batches plus a schema accessor. The check path never materializes
-//! the whole file (NFR-2, constant memory), with one documented exception:
+//! the whole file (NFR-2, constant memory), with two documented exceptions:
 //! JSON *arrays* are not streamable — the file is parsed whole and then split
-//! into batches (see [`readers::json`]).
+//! into batches (see [`readers::json`]) — and neither are workbooks
+//! (see [`readers::excel`]).
+//!
+//! ## Formats
+//!
+//! CSV/TSV, Parquet, NDJSON, JSON (array, or an array under `json_path`),
+//! Excel/OpenDocument workbooks (`.xlsx`, `.xlsm`, `.xlsb`, `.xls`, `.ods`),
+//! XML (one element per record) and fixed-width text. Each optionally gzip-
+//! or zstd-compressed. The contract can carry the reading instructions in
+//! `settings.input` — the sheet, the record element, the fixed-width layout —
+//! so a partner feed is checked the same way everywhere; see
+//! [`ReadOptions::apply_input_settings`].
 //!
 //! ## Type handling (doc 03 §5 "Type handling")
 //!
-//! Text formats (CSV, NDJSON, JSON) are read in **stringly** mode for the check
-//! path: every column is delivered as a `String` column. The engine casts each
+//! Text formats (CSV, NDJSON, JSON, XML, fixed-width) and workbooks are read
+//! in **stringly** mode for the check path: every column is delivered as a
+//! `String` column. The engine casts each
 //! contract column to its declared dtype per batch, which lets it *count* cast
 //! failures per row and capture the offending raw values as samples. Reading
 //! with forced dtypes at the parser level would silently lose those values.
@@ -47,5 +59,8 @@ pub use dtypes::{dtype_for, schema_from_contract};
 pub use error::IoError;
 pub use format::{detect, sniff_compression, Compression, InputFormat};
 pub use open::{open, open_reader};
-pub use options::{CsvEncoding, CsvOptions, ReadOptions, TypingMode};
+pub use options::{
+    delimiter_byte, CsvEncoding, CsvOptions, ExcelOptions, FixedWidthOptions, FixedWidthSpan,
+    ReadOptions, TypingMode, XmlOptions,
+};
 pub use source::{resolve, Source};

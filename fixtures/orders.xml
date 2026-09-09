@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<orders exported="2026-07-05">
+  <order id="1001" shipped="true">
+    <customer>Ada Lovelace</customer>
+    <amount currency="GBP">12.5</amount>
+    <placed_at>2026-07-01T09:30:00Z</placed_at>
+    <note xsi:nil="true" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"/>
+  </order>
+  <order id="1002" shipped="false">
+    <customer>Grace Hopper</customer>
+    <amount currency="USD">250</amount>
+    <placed_at>2026-07-02T14:00:00Z</placed_at>
+    <note>rush</note>
+  </order>
+  <order id="1003" shipped="true">
+    <customer>Zo&#xEB; M&#252;ller</customer>
+    <amount currency="EUR">99.99</amount>
+    <placed_at>2026-07-03T00:00:00Z</placed_at>
+    <note/>
+  </order>
+  <order id="1004" shipped="false">
+    <customer>Ken &amp; Co</customer>
+    <amount currency="USD">0.75</amount>
+    <placed_at>2026-07-04T18:45:00Z</placed_at>
+    <note><![CDATA[sample "kit"]]></note>
+  </order>
+</orders>

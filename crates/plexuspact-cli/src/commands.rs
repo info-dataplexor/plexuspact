@@ -8,7 +8,9 @@ use owo_colors::OwoColorize;
 use plexuspact_contract::{
     databricks_dlt, diff, validate, Change, Contract, DltLang, Impact, LintLevel,
 };
-use plexuspact_core::{draft_contract, profile_path, run_check, CoreError, RunResult};
+use plexuspact_core::{
+    draft_contract_with_input, profile_path_with, run_check_with, CoreError, RunResult,
+};
 use plexuspact_report::{
     render_html, render_human, render_json, render_junit, render_openlineage, HumanOptions,
     OpenLineageOptions,
@@ -148,13 +150,12 @@ fn cmd_check(args: CheckArgs, offline: bool) -> CmdResult {
         },
     };
 
-    let result = match run_check(
+    let result = match run_check_with(
         contract,
         bytes,
         Some(args.contract.display().to_string()),
         &args.path,
-        args.input_format.as_deref(),
-        args.json_path.as_deref(),
+        &args.input.overrides(),
         args.sample_failures,
         args.redact_samples,
         now,
@@ -702,18 +703,21 @@ fn cmd_export(args: ExportArgs) -> CmdResult {
 // ────────────────────────────────── init ────────────────────────────────
 
 fn cmd_init(args: InitArgs) -> CmdResult {
-    let profile = match profile_path(
-        &args.path,
-        args.input_format.as_deref(),
-        args.json_path.as_deref(),
-    ) {
+    let overrides = args.input.overrides();
+    // Turn the flags into a `settings.input` block first: a bad format name
+    // or layout is a usage error before any data is read.
+    let input = match overrides.to_input_settings() {
+        Ok(i) => i,
+        Err(e) => return Ok(handle_core_error(e)),
+    };
+    let profile = match profile_path_with(&args.path, &overrides) {
         Ok(p) => p,
         Err(e) => return Ok(handle_core_error(e)),
     };
     let dataset = args
         .dataset
         .unwrap_or_else(|| derive_dataset_name(&args.path));
-    let yaml = draft_contract(&profile, &dataset);
+    let yaml = draft_contract_with_input(&profile, &dataset, &input);
 
     match &args.out {
         Some(path) => {

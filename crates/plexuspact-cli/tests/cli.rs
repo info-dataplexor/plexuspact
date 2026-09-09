@@ -548,3 +548,240 @@ fn push_rejects_a_file_that_is_not_a_result() {
         .code(2)
         .stderr(predicate::str::contains("is not JSON"));
 }
+
+// ───────────────── Excel / XML / fixed-width inputs, contract-carried ─────────────────
+
+const XLSX: &str = "../../fixtures/orders.xlsx";
+const XML: &str = "../../fixtures/orders.xml";
+const FWF: &str = "../../fixtures/orders.fwf";
+const XLSX_CONTRACT: &str = "../../fixtures/orders_excel.yaml";
+const XML_CONTRACT: &str = "../../fixtures/orders_xml.yaml";
+const FWF_CONTRACT: &str = "../../fixtures/orders_fwf.yaml";
+
+/// `init` on a workbook records the sheet and the skipped rows in the draft,
+/// so the next `check` needs no flags.
+#[test]
+fn excel_init_records_sheet_and_skip_rows() {
+    let out = bin()
+        .args(["init", XLSX, "--sheet", "2", "--skip-rows", "2"])
+        .assert()
+        .code(0)
+        .get_output()
+        .stdout
+        .clone();
+    let yaml = String::from_utf8(out).unwrap();
+    assert!(yaml.contains("dataset: orders\n"), "{yaml}");
+    assert!(yaml.contains("  customer:"), "{yaml}");
+    assert!(yaml.contains("  placed_at:"), "{yaml}");
+    assert!(yaml.contains("  input:\n"), "{yaml}");
+    assert!(yaml.contains("    skip_rows: 2\n"), "{yaml}");
+    assert!(yaml.contains("    sheet: \"2\"\n"), "{yaml}");
+    let parsed = plexuspact_contract::parse_str(&yaml, "draft").expect("draft parses");
+    assert_eq!(parsed.settings.input.sheet.as_deref(), Some("2"));
+    assert_eq!(parsed.settings.input.skip_rows, Some(2));
+}
+
+/// The contract says which sheet and where the table starts; `check` reads
+/// the workbook that way with no flags at all.
+#[test]
+fn excel_check_reads_the_sheet_the_contract_names() {
+    bin()
+        .args([
+            "check",
+            XLSX,
+            "--contract",
+            XLSX_CONTRACT,
+            "--format",
+            "json",
+        ])
+        .assert()
+        .code(0)
+        .stdout(predicate::str::contains("\"rows\":4").or(predicate::str::contains("\"rows\": 4")));
+}
+
+/// Flags win over the contract for one run: the first sheet has the table at
+/// the top (and an extra `due` column the contract tolerates).
+#[test]
+fn excel_flags_override_contract_input() {
+    bin()
+        .args([
+            "check",
+            XLSX,
+            "--contract",
+            XLSX_CONTRACT,
+            "--sheet",
+            "Orders",
+            "--skip-rows",
+            "0",
+        ])
+        .assert()
+        .code(0);
+    bin()
+        .args([
+            "check",
+            XLSX,
+            "--contract",
+            XLSX_CONTRACT,
+            "--sheet",
+            "Totals",
+        ])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("no sheet `Totals`"))
+        .stderr(predicate::str::contains("Orders, Report"));
+}
+
+/// XML: attributes and children become columns, a nested attribute becomes
+/// a dotted column, entities and CDATA decode, `xsi:nil` is a null.
+#[test]
+fn xml_init_and_check() {
+    let out = bin()
+        .args(["init", XML])
+        .assert()
+        .code(0)
+        .get_output()
+        .stdout
+        .clone();
+    let yaml = String::from_utf8(out).unwrap();
+    for col in [
+        "  id:",
+        "  shipped:",
+        "  customer:",
+        "  amount.currency:",
+        "  amount:",
+        "  note:",
+    ] {
+        assert!(yaml.contains(col), "missing {col} in:\n{yaml}");
+    }
+    assert!(
+        !yaml.contains("input:"),
+        "no flags were given, so nothing to record:\n{yaml}"
+    );
+
+    bin()
+        .args(["check", XML, "--contract", XML_CONTRACT])
+        .assert()
+        .code(0);
+}
+
+#[test]
+fn xml_record_not_found_lists_what_it_saw() {
+    bin()
+        .args([
+            "check",
+            XML,
+            "--contract",
+            XML_CONTRACT,
+            "--xml-record",
+            "item",
+        ])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("item"))
+        .stderr(predicate::str::contains("orders/order"));
+}
+
+/// The layout lives in the contract; the data file is just lines.
+#[test]
+fn fixed_width_check_via_contract_layout() {
+    bin()
+        .args(["check", FWF, "--contract", FWF_CONTRACT, "--format", "json"])
+        .assert()
+        .code(0)
+        .stdout(predicate::str::contains("\"rows\":4").or(predicate::str::contains("\"rows\": 4")));
+}
+
+/// `--fixed-width` on `init` drafts the layout into the contract.
+#[test]
+fn fixed_width_init_records_layout() {
+    let out = bin()
+        .args([
+            "init",
+            FWF,
+            "--fixed-width",
+            "id=1-4,customer=5-20,amount=8,currency=3,shipped=1,placed_at=16,note=49-80",
+            "--skip-rows",
+            "3",
+        ])
+        .assert()
+        .code(0)
+        .get_output()
+        .stdout
+        .clone();
+    let yaml = String::from_utf8(out).unwrap();
+    assert!(yaml.contains("    format: fixed_width\n"), "{yaml}");
+    assert!(yaml.contains("    skip_rows: 3\n"), "{yaml}");
+    assert!(
+        yaml.contains("      - { name: \"id\", start: 1, end: 4 }\n"),
+        "{yaml}"
+    );
+    assert!(
+        yaml.contains("      - { name: \"amount\", width: 8 }\n"),
+        "{yaml}"
+    );
+    // The values were sliced at the right places: amounts profile as numbers.
+    assert!(
+        yaml.contains("  amount:") && yaml.contains("type: float"),
+        "{yaml}"
+    );
+    let parsed = plexuspact_contract::parse_str(&yaml, "draft").expect("draft parses");
+    assert_eq!(parsed.settings.input.fixed_width.len(), 7);
+}
+
+#[test]
+fn fixed_width_without_layout_is_a_usage_error() {
+    bin()
+        .args([
+            "check",
+            FWF,
+            "--contract",
+            CONTRACT,
+            "--input-format",
+            "fixed_width",
+        ])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("no field layout"))
+        .stderr(predicate::str::contains("settings.input.fixed_width"));
+    bin()
+        .args(["init", FWF, "--fixed-width", "id=0-4"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("--fixed-width"));
+}
+
+#[test]
+fn unknown_input_format_is_a_usage_error() {
+    bin()
+        .args(["init", DATA, "--input-format", "dbf"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("--input-format"))
+        .stderr(predicate::str::contains("fixed_width"));
+}
+
+/// A semicolon-separated, header-less export: the flags describe it and the
+/// draft carries the description forward.
+#[test]
+fn delimiter_and_no_header_are_recorded() {
+    let data = write_temp("export.csv", "1;Ada;12.5\n2;Grace;250\n");
+    let out = bin()
+        .args(["init"])
+        .arg(&data)
+        .args(["--delimiter", ";", "--no-header", "--dataset", "export"])
+        .assert()
+        .code(0)
+        .get_output()
+        .stdout
+        .clone();
+    let yaml = String::from_utf8(out).unwrap();
+    assert!(yaml.contains("    delimiter: \";\"\n"), "{yaml}");
+    assert!(yaml.contains("    has_header: false\n"), "{yaml}");
+    assert!(
+        !yaml.contains("  Ada:"),
+        "the first row is data, not names:\n{yaml}"
+    );
+    let parsed = plexuspact_contract::parse_str(&yaml, "draft").expect("draft parses");
+    assert_eq!(parsed.settings.input.delimiter.as_deref(), Some(";"));
+    assert_eq!(parsed.settings.input.has_header, Some(false));
+}

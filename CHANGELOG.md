@@ -11,6 +11,10 @@ and get a `MIGRATION.md` entry.
 
 ### Added
 
+- Excel and OpenDocument workbooks (`.xlsx`, `.xlsm`, `.xlsb`, `.xls`, `.ods`), XML and fixed-width text as inputs to `check` and `init`, next to CSV/TSV, Parquet, NDJSON and JSON. Workbook cells are read as the text a CSV export would show (dates, timestamps, booleans, whole numbers); XML attributes and children become columns, nested ones dotted (`amount.currency`); fixed-width columns are character spans, so accents do not shift them.
+- `settings.input` in the contract carries the reading instructions — `format`, `sheet`, `skip_rows`, `has_header`, `delimiter`, `json_path`, `xml_record`, `fixed_width` — so a partner feed is checked the same way everywhere. `init` records what its flags said; `check` applies the block and lets its flags override it for one run. New flags on both: `--sheet`, `--skip-rows`, `--no-header`, `--delimiter`, `--xml-record`, `--fixed-width`.
+- `datetime` columns accept a bare date (`2026-07-01`, read as midnight UTC) and minute-precision stamps (`2026-07-01 09:30`), the forms spreadsheets and mainframe extracts produce.
+
 - `plexuspact check` — validate CSV/Parquet/NDJSON/JSON (file or stdin, gzip/zstd transparent) against a `contract.yaml`; human, JSON, JUnit, and self-contained HTML report outputs; deterministic exit codes (0/1/2/3); `--strict`, `--sample-failures`.
 - `plexuspact init` — profile a dataset and draft a contract with inferred types and conservative commented suggestions.
 - `plexuspact validate-contract` — lint a contract without data; line/column-pointed errors.

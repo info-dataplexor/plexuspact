@@ -1438,8 +1438,151 @@ pub struct Migration {
     pub note: Option<String>,
 }
 
+/// The on-disk format of a dataset's feed, when the contract pins it
+/// (`settings.input.format`). Without it the reader goes by the file
+/// extension, which is right for almost everything except a feed that
+/// arrives as `export.dat`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum InputFormat {
+    /// Comma-separated values.
+    Csv,
+    /// Tab-separated values.
+    Tsv,
+    /// Apache Parquet.
+    Parquet,
+    /// Newline-delimited JSON.
+    Ndjson,
+    /// One JSON array of records.
+    Json,
+    /// An Excel workbook (`.xlsx`, `.xlsm`, `.xlsb`, `.xls`) or OpenDocument
+    /// spreadsheet (`.ods`). One sheet is the dataset; see `sheet`.
+    Excel,
+    /// An XML document with one element per record; see `xml_record`.
+    Xml,
+    /// Fixed-width text, one record per line, columns by character position;
+    /// see `fixed_width`.
+    FixedWidth,
+}
+
+impl InputFormat {
+    /// The stable lowercase name, as the CLI's `--input-format` takes it.
+    pub fn name(self) -> &'static str {
+        match self {
+            InputFormat::Csv => "csv",
+            InputFormat::Tsv => "tsv",
+            InputFormat::Parquet => "parquet",
+            InputFormat::Ndjson => "ndjson",
+            InputFormat::Json => "json",
+            InputFormat::Excel => "excel",
+            InputFormat::Xml => "xml",
+            InputFormat::FixedWidth => "fixed_width",
+        }
+    }
+
+    /// Parses a format name the way `--input-format` does: the canonical names
+    /// plus the aliases people actually type (`jsonl`, `xlsx`, `fwf`).
+    pub fn from_name(s: &str) -> Option<InputFormat> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "csv" => Some(InputFormat::Csv),
+            "tsv" => Some(InputFormat::Tsv),
+            "parquet" => Some(InputFormat::Parquet),
+            "ndjson" | "jsonl" => Some(InputFormat::Ndjson),
+            "json" => Some(InputFormat::Json),
+            "excel" | "xlsx" | "xlsm" | "xlsb" | "xls" | "ods" => Some(InputFormat::Excel),
+            "xml" => Some(InputFormat::Xml),
+            "fixed_width" | "fixed-width" | "fixedwidth" | "fixed" | "fwf" => {
+                Some(InputFormat::FixedWidth)
+            }
+            _ => None,
+        }
+    }
+}
+
+impl fmt::Display for InputFormat {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.name())
+    }
+}
+
+/// One field of a fixed-width record: a name and the character positions
+/// (1-based, inclusive) it occupies on every line.
+///
+/// Give `end` or `width`, not both. `start` may be left out on every field
+/// but the first, in which case the field begins right after the previous one
+/// — the way a layout document usually reads.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct FixedWidthField {
+    /// Column name the field is read into.
+    pub name: String,
+    /// First character position, 1-based. Defaults to the character after the
+    /// previous field's end (1 for the first field).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start: Option<u32>,
+    /// Last character position, 1-based and inclusive.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end: Option<u32>,
+    /// Number of characters, as an alternative to `end`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub width: Option<u32>,
+}
+
+/// How the feed is read (`settings.input`). Everything here is optional and
+/// most contracts need none of it: a `.csv` is a CSV. It exists for the feeds
+/// that need telling — the workbook whose data is on the third sheet under two
+/// title rows, the XML export whose records are `<Order>` elements, the
+/// mainframe extract with no delimiters at all.
+///
+/// Reading instructions belong in the contract rather than on the command
+/// line because the contract is what travels: the same file read the same way
+/// in CI, in the cloud's SFTP pickup and on a laptop, without each remembering
+/// the flags.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct InputSettings {
+    /// Pin the format instead of going by the file extension.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub format: Option<InputFormat>,
+    /// CSV/TSV: the field delimiter, one character (default `,` for CSV, tab
+    /// for TSV). Write a tab as `"\t"`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delimiter: Option<String>,
+    /// CSV/TSV/Excel/fixed-width: whether the first row names the columns.
+    /// Default `true`, except fixed-width, where the fields carry the names
+    /// and the default is `false`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub has_header: Option<bool>,
+    /// JSON: dotted path to the record array inside a wrapping object
+    /// (`data.items`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub json_path: Option<String>,
+    /// Excel: the sheet holding the data, by name or 1-based position
+    /// (default: the first sheet).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sheet: Option<String>,
+    /// Excel/CSV/fixed-width: rows to skip before the header (title rows,
+    /// blank lines a report writer leaves at the top).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub skip_rows: Option<u32>,
+    /// XML: the element that is one record — a name (`order`) or a path from
+    /// the root (`orders/order`). Default: the root's first child element.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub xml_record: Option<String>,
+    /// Fixed-width: the fields, in the order they lie on the line.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub fixed_width: Vec<FixedWidthField>,
+}
+
+impl InputSettings {
+    /// `true` when nothing is set — the block is then left out of YAML output.
+    pub fn is_empty(&self) -> bool {
+        *self == InputSettings::default()
+    }
+}
+
 /// Dataset-wide validation settings.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct Settings {
     /// Whether columns not declared in the contract are allowed (default `true`).
@@ -1450,6 +1593,10 @@ pub struct Settings {
     /// Severity applied when a value cannot be read as the declared type
     /// (default `error`).
     pub on_type_mismatch: Severity,
+    /// How the feed is read — format, sheet, XML record element, fixed-width
+    /// layout. Left out of YAML output when nothing is set.
+    #[serde(skip_serializing_if = "InputSettings::is_empty")]
+    pub input: InputSettings,
 }
 
 impl Default for Settings {
@@ -1458,6 +1605,7 @@ impl Default for Settings {
             allow_extra_columns: true,
             columns_exact: false,
             on_type_mismatch: Severity::Error,
+            input: InputSettings::default(),
         }
     }
 }

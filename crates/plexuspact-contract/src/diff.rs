@@ -919,6 +919,19 @@ fn diff_settings(old: &Contract, new: &Contract, out: &mut Vec<Change>) {
         }),
         _ => {}
     }
+    // Reading instructions change how the file is opened, not what the data
+    // must satisfy: a consumer's verdict on the same rows is unchanged. They
+    // are still worth a line in the diff, because "the feed is on another
+    // sheet now" is exactly the kind of thing a reviewer wants to have seen.
+    if o.input != n.input {
+        out.push(Change {
+            impact: Impact::NonBreaking,
+            path: "settings.input".into(),
+            description:
+                "reading instructions changed (format, sheet, delimiter, record element or layout)"
+                    .into(),
+        });
+    }
 }
 
 #[cfg(test)]

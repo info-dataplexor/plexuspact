@@ -59,14 +59,65 @@ pub struct InitArgs {
     /// Dataset name to record in the contract (default: derived from the path).
     #[arg(long)]
     pub dataset: Option<String>,
-    /// Force the input format instead of detecting from the extension.
-    #[arg(long, value_name = "FORMAT")]
+    #[command(flatten)]
+    pub input: InputArgs,
+}
+
+/// How to read the data file. Shared by `init` and `check`.
+///
+/// A contract can carry the same instructions under `settings.input`; these
+/// flags win over it for one run. `init` records what it was told in the
+/// draft, so the next `check` needs no flags at all.
+#[derive(Debug, Default, clap::Args)]
+pub struct InputArgs {
+    /// Force the input format instead of detecting from the extension
+    /// (csv, tsv, parquet, ndjson, json, excel, xml, fixed_width).
+    #[arg(long, value_name = "FORMAT", help_heading = "Input")]
     pub input_format: Option<String>,
     /// For JSON input: dotted path to the record array inside a wrapping object
     /// (e.g. `results`, `data.items`). Use when the API returns
     /// `{ "results": [...] }` instead of a bare array.
-    #[arg(long, value_name = "PATH")]
+    #[arg(long, value_name = "PATH", help_heading = "Input")]
     pub json_path: Option<String>,
+    /// CSV: the field separator, one character or `\t` (default: from the
+    /// extension — `,` for .csv, tab for .tsv).
+    #[arg(long, value_name = "CHAR", help_heading = "Input")]
+    pub delimiter: Option<String>,
+    /// The first row holds data, not column names (CSV, workbooks,
+    /// fixed-width). Columns are then named by position.
+    #[arg(long, help_heading = "Input")]
+    pub no_header: bool,
+    /// Workbooks: the sheet to read, by name or 1-based position
+    /// (default: the first sheet).
+    #[arg(long, value_name = "NAME|N", help_heading = "Input")]
+    pub sheet: Option<String>,
+    /// Rows to skip before the header (report titles, notes above the table).
+    #[arg(long, value_name = "N", help_heading = "Input")]
+    pub skip_rows: Option<u32>,
+    /// XML: the element that is one record — its name (`row`) or a path
+    /// (`orders/order`). Default: the first element under the root.
+    #[arg(long, value_name = "NAME|PATH", help_heading = "Input")]
+    pub xml_record: Option<String>,
+    /// Fixed-width text: the column layout, 1-based character positions,
+    /// e.g. `id=1-8,name=9-40,amount=12` (`start-end` or a width).
+    #[arg(long, value_name = "LAYOUT", help_heading = "Input")]
+    pub fixed_width: Option<String>,
+}
+
+impl InputArgs {
+    /// The flags as core overrides.
+    pub fn overrides(&self) -> plexuspact_core::InputOverrides {
+        plexuspact_core::InputOverrides {
+            format: self.input_format.clone(),
+            json_path: self.json_path.clone(),
+            delimiter: self.delimiter.clone(),
+            has_header: if self.no_header { Some(false) } else { None },
+            sheet: self.sheet.clone(),
+            skip_rows: self.skip_rows,
+            xml_record: self.xml_record.clone(),
+            fixed_width: self.fixed_width.clone(),
+        }
+    }
 }
 
 /// `plexuspact check <path> --contract <file>`
@@ -100,14 +151,8 @@ pub struct CheckArgs {
     /// Mask sample values in output (keep row numbers).
     #[arg(long)]
     pub redact_samples: bool,
-    /// Force the input format instead of detecting from the extension.
-    #[arg(long, value_name = "FORMAT")]
-    pub input_format: Option<String>,
-    /// For JSON input: dotted path to the record array inside a wrapping object
-    /// (e.g. `results`, `data.items`). Use when the API returns
-    /// `{ "results": [...] }` instead of a bare array.
-    #[arg(long, value_name = "PATH")]
-    pub json_path: Option<String>,
+    #[command(flatten)]
+    pub input: InputArgs,
     /// Disable ANSI colors (also respects `NO_COLOR`).
     #[arg(long)]
     pub no_color: bool,

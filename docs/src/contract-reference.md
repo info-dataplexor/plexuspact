@@ -350,6 +350,56 @@ columns:
 | `allow_extra_columns` | bool | `true` | Tolerate columns not declared in the contract. |
 | `columns_exact` | bool | `false` | Require exactly the declared columns (overrides `allow_extra_columns`). |
 | `on_type_mismatch` | `error` \| `warn` | `error` | Severity for values that fail to parse as the declared type. A mismatch is a reported check failure with sample rows — never a crash. |
+| `input` | object | — | How the data file is read; see below. |
+
+### Input settings
+
+A feed that is not a plain CSV needs reading instructions: which sheet, which
+XML element is a record, where each fixed-width column starts. They belong in
+the contract, not in a CI script, so every place that checks the feed reads it
+the same way. `plexuspact init` writes them from its flags; `plexuspact check`
+applies them, and its flags (`--sheet`, `--skip-rows`, `--xml-record`,
+`--fixed-width`, `--delimiter`, `--no-header`, `--input-format`, `--json-path`)
+override them for one run.
+
+```yaml
+settings:
+  input:
+    format: excel        # csv | tsv | parquet | ndjson | json | excel | xml | fixed_width
+    sheet: Report        # workbooks: name or 1-based position (default: first sheet)
+    skip_rows: 2         # rows above the header (report titles)
+    has_header: true     # false: the first row is data, columns are named by position
+```
+
+| Field | Applies to | Description |
+|---|---|---|
+| `format` | all | Pins the format instead of going by the file extension. |
+| `delimiter` | csv | One character, or `\t`. |
+| `has_header` | csv, excel, fixed_width | Whether the first row names the columns. |
+| `skip_rows` | csv, excel, fixed_width | Lines to skip before the header. |
+| `json_path` | json | Dotted path to the record array inside an envelope (`data.items`). |
+| `sheet` | excel | Sheet name or 1-based position. |
+| `xml_record` | xml | The element that is one record: a name (`order`) or a path (`orders/order`). Default: the first element under the root. |
+| `fixed_width` | fixed_width | The layout: a list of `{ name, start, end }` (1-based, inclusive, in characters) or `{ name, width }` fields laid end to end. |
+
+Workbook cells arrive as text the way a CSV export would show them: dates as
+`2026-07-01`, timestamps as `2026-07-01T09:30:00`, booleans as `true`/`false`,
+whole numbers without a `.0`. XML attributes and child elements both become
+columns; a nested element becomes a dotted column (`address.city`), an
+attribute on a child too (`amount.currency`); an empty element or
+`xsi:nil="true"` is a null.
+
+```yaml
+settings:
+  input:
+    format: fixed_width
+    skip_rows: 2
+    has_header: true
+    fixed_width:
+      - { name: id, start: 1, end: 4 }
+      - { name: customer, start: 5, end: 20 }
+      - { name: amount, width: 8 }
+```
 
 ## Contract discovery
 

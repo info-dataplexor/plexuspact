@@ -28,8 +28,10 @@ pub enum IoError {
     /// The input format could not be detected from the file extension.
     #[error(
         "cannot detect the input format of `{path}`: expected one of the extensions \
-         .csv, .tsv, .parquet, .ndjson, .jsonl, .json (optionally with .gz or .zst); \
-         pass --input-format csv|tsv|parquet|ndjson|json to set it explicitly"
+         .csv, .tsv, .parquet, .ndjson, .jsonl, .json, .xlsx, .xls, .ods, .xml, .fwf \
+         (optionally with .gz or .zst); pass --input-format \
+         csv|tsv|parquet|ndjson|json|excel|xml|fixed_width to set it explicitly, \
+         or pin it in the contract under `settings.input.format`"
     )]
     UndetectableFormat {
         /// Path whose extension was not recognized.
@@ -39,7 +41,8 @@ pub enum IoError {
     /// Stdin was requested but no explicit format was given.
     #[error(
         "reading from stdin requires an explicit format: pass \
-         --input-format csv|tsv|ndjson|json (parquet is not supported on stdin)"
+         --input-format csv|tsv|ndjson|json|excel|xml|fixed_width \
+         (parquet is not supported on stdin)"
     )]
     StdinNeedsFormat,
 
@@ -104,6 +107,57 @@ pub enum IoError {
         /// The user-supplied json-path.
         pointer: String,
         /// What specifically went wrong (missing key, wrong type, …).
+        detail: String,
+    },
+
+    /// Fixed-width input was requested without a field layout.
+    #[error(
+        "`{path}` is fixed-width text but no field layout was given; \
+         put the layout in the contract under `settings.input.fixed_width` \
+         (name + start/end or width per field), or pass --fixed-width \
+         \"id=1-8,name=9-40,amount=12\""
+    )]
+    FixedWidthNeedsLayout {
+        /// Path being read.
+        path: String,
+    },
+
+    /// The requested worksheet is not in the workbook.
+    #[error(
+        "`{path}` has no sheet `{sheet}` (it has: {available}); \
+         set `settings.input.sheet` (or --sheet) to one of those names, or to its 1-based position"
+    )]
+    SheetNotFound {
+        /// Path being read.
+        path: String,
+        /// The sheet that was asked for.
+        sheet: String,
+        /// The workbook's sheet names, comma-separated.
+        available: String,
+    },
+
+    /// No record element matched in the XML document.
+    #[error(
+        "no `{record}` records found in `{path}` (elements seen: {seen}); \
+         set `settings.input.xml_record` (or --xml-record) to the element that is one record, \
+         as a name (`order`) or a path from the root (`orders/order`)"
+    )]
+    XmlRecordNotFound {
+        /// Path being read.
+        path: String,
+        /// The record element that was looked for (`<auto>` when none was set).
+        record: String,
+        /// Element paths seen near the top of the document.
+        seen: String,
+    },
+
+    /// A read option is not usable as given (`--delimiter ";;"`, a fixed-width
+    /// spec that does not parse, …).
+    #[error("{key}: {detail}")]
+    InvalidOption {
+        /// The option, as the user names it (`--delimiter`, `settings.input.fixed_width`).
+        key: String,
+        /// What is wrong and what would be right.
         detail: String,
     },
 

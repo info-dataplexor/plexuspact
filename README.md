@@ -62,7 +62,7 @@ Verify: `plexuspact --version`
 
 ## Quick start
 
-Bootstrap a contract from any CSV, Parquet, or NDJSON file — `init` profiles the data and writes a draft with inferred types and conservative, commented suggestions:
+Bootstrap a contract from any CSV, Parquet, NDJSON, JSON, Excel, XML or fixed-width file — `init` profiles the data and writes a draft with inferred types and conservative, commented suggestions:
 
 ```sh
 $ plexuspact init signups.csv --out contract.yaml
@@ -175,7 +175,7 @@ plexuspact push <result.json|->                      # report a saved result to 
 # Global: --offline (never open a socket), -v/-vv (logs to stderr)
 ```
 
-Inputs: CSV (delimiter/quote/encoding options), Parquet, NDJSON, JSON array — from a file or stdin, with transparent gzip/zstd decompression.
+Inputs: CSV/TSV (delimiter/quote/encoding options), Parquet, NDJSON, JSON array (or an array under `--json-path`), Excel and OpenDocument workbooks (`--sheet`, `--skip-rows`), XML (`--xml-record`), fixed-width text (`--fixed-width id=1-8,name=9-40`) — from a file or stdin, with transparent gzip/zstd decompression. The reading instructions can live in the contract under `settings.input`, so a partner's workbook or mainframe extract is checked the same way in CI, on a laptop and in the cloud without anyone remembering the flags.
 
 ## Performance
 
