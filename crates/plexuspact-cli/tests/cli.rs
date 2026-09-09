@@ -785,3 +785,77 @@ fn delimiter_and_no_header_are_recorded() {
     assert_eq!(parsed.settings.input.delimiter.as_deref(), Some(";"));
     assert_eq!(parsed.settings.input.has_header, Some(false));
 }
+
+/// A `references` check needs the other dataset's keys. `--reference` reads
+/// them from a file; without it the check cannot run, and a check that could
+/// not run does not pass.
+#[test]
+fn reference_flag_supplies_the_other_datasets_keys() {
+    let contract = write_temp(
+        "orders.yaml",
+        "apiVersion: v1\ndataset: orders\nprimary_key: [order_id]\ncolumns:\n  order_id: { type: string, required: true }\n  customer_id: { type: string, required: true }\ndataset_checks:\n  - references: { columns: [customer_id], dataset: customers }\n",
+    );
+    let orders = write_temp("orders.csv", "order_id,customer_id\n1,c1\n2,c2\n");
+    let customers = write_temp("customers.csv", "customer_id,name\nc1,Ada\nc2,Grace\n");
+    let missing = write_temp("customers.csv", "customer_id,name\nc1,Ada\n");
+
+    bin()
+        .arg("check")
+        .arg(&orders)
+        .arg("--contract")
+        .arg(&contract)
+        .arg("--reference")
+        .arg(format!("customers={}", customers.display()))
+        .assert()
+        .code(0)
+        .stderr(predicate::str::contains(
+            "2 distinct key(s) for `customers`",
+        ));
+
+    bin()
+        .arg("check")
+        .arg(&orders)
+        .arg("--contract")
+        .arg(&contract)
+        .arg("--reference")
+        .arg(format!("customers={}", missing.display()))
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains("references"));
+
+    bin()
+        .arg("check")
+        .arg(&orders)
+        .arg("--contract")
+        .arg(&contract)
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains("no keys known for `customers`"));
+}
+
+#[test]
+fn malformed_reference_flag_is_a_usage_error() {
+    bin()
+        .args([
+            "check",
+            DATA,
+            "--contract",
+            CONTRACT,
+            "--reference",
+            "customers",
+        ])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("expected `<dataset>=<path>`"));
+
+    bin()
+        .arg("check")
+        .arg(DATA)
+        .arg("--contract")
+        .arg(CONTRACT)
+        .arg("--reference")
+        .arg(format!("customers={DATA}"))
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("no `references` check"));
+}

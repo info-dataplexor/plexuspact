@@ -42,7 +42,10 @@ pub fn execute(
         .collect();
 
     let now_micros = opts.now.timestamp_micros();
-    let mut checks = crate::plan::build(contract, &present, now_micros);
+    let mut checks = crate::plan::build(contract, &present, now_micros, &opts.references);
+    // The key check is kept apart from the list: it is the one check whose
+    // state (the key set) outlives its outcome.
+    let mut primary_key = crate::plan::primary_key_check(contract, &present);
 
     // Which declared columns to extract each batch (present ∩ declared).
     let to_extract: Vec<(String, plexuspact_contract::ColType)> = contract
@@ -77,12 +80,25 @@ pub fn execute(
         for check in &mut checks {
             check.eval_batch(&view)?;
         }
+        if let Some(pk) = &mut primary_key {
+            pk.eval_batch(&view);
+        }
 
         base_row += batch_rows;
         rows_total += batch_rows;
     }
 
-    let outcomes: Vec<CheckOutcome> = checks.into_iter().map(|c| c.finalize(rows_total)).collect();
+    // Every dataset check compiles to exactly one outcome, so the key's slot —
+    // after the column checks, before the dataset checks — is a fixed offset.
+    let dataset_start = checks.len() - contract.dataset_checks.len();
+    let mut outcomes: Vec<CheckOutcome> =
+        checks.into_iter().map(|c| c.finalize(rows_total)).collect();
+    let mut key_set = None;
+    if let Some(pk) = primary_key {
+        let (outcome, keys) = pk.finish();
+        outcomes.insert(dataset_start, outcome);
+        key_set = keys;
+    }
 
     Ok(EngineOutput {
         rows_total,
@@ -90,5 +106,6 @@ pub fn execute(
         observed_columns,
         observed_typed,
         checks: outcomes,
+        primary_key: key_set,
     })
 }

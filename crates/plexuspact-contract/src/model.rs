@@ -915,6 +915,20 @@ pub enum DatasetCheck {
         /// Failure severity.
         severity: Severity,
     },
+    /// A statement about the dataset as a whole, evaluated once over every
+    /// row: `SUM(amount) = 1000`, `COUNT(*) = COUNT(DISTINCT order_id)`,
+    /// `MAX(shipped_at) >= MAX(ordered_at)`. The expression must reduce to a
+    /// single boolean; a per-row rule belongs in `custom_expr`.
+    Assert { expr: String, severity: Severity },
+    /// Every value (tuple) in `columns` must exist among `to` in the last
+    /// passing delivery of `dataset` — a foreign key across two contracts.
+    /// Rows with a null in any of `columns` are not checked, as in SQL.
+    References {
+        columns: Vec<String>,
+        dataset: String,
+        to: Vec<String>,
+        severity: Severity,
+    },
 }
 
 /// Names of all dataset checks as they appear in YAML.
@@ -925,6 +939,8 @@ pub(crate) const DATASET_CHECK_NAMES: &[&str] = &[
     "null_ratio_max",
     "unique_ratio_min",
     "custom_expr",
+    "assert",
+    "references",
 ];
 
 impl DatasetCheck {
@@ -936,7 +952,9 @@ impl DatasetCheck {
             | DatasetCheck::Freshness { severity, .. }
             | DatasetCheck::NullRatioMax { severity, .. }
             | DatasetCheck::UniqueRatioMin { severity, .. }
-            | DatasetCheck::CustomExpr { severity, .. } => *severity,
+            | DatasetCheck::CustomExpr { severity, .. }
+            | DatasetCheck::Assert { severity, .. }
+            | DatasetCheck::References { severity, .. } => *severity,
         }
     }
 
@@ -949,6 +967,8 @@ impl DatasetCheck {
             DatasetCheck::NullRatioMax { .. } => "null_ratio_max",
             DatasetCheck::UniqueRatioMin { .. } => "unique_ratio_min",
             DatasetCheck::CustomExpr { .. } => "custom_expr",
+            DatasetCheck::Assert { .. } => "assert",
+            DatasetCheck::References { .. } => "references",
         }
     }
 }
@@ -999,6 +1019,27 @@ struct ColumnRatioSer<'a> {
 struct CustomExprSer<'a> {
     expr: &'a str,
     severity: Severity,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ReferencesDe {
+    columns: Vec<String>,
+    dataset: String,
+    #[serde(default)]
+    to: Option<Vec<String>>,
+    #[serde(default)]
+    severity: Option<Severity>,
+}
+
+#[derive(Serialize)]
+struct ReferencesSer<'a> {
+    columns: &'a [String],
+    dataset: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    to: Option<&'a [String]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    severity: Option<Severity>,
 }
 
 /// Resolves severity given both possible spellings (inside the check's value
@@ -1103,6 +1144,60 @@ fn build_dataset_check(
                 })
             }
         },
+        "assert" => match value {
+            serde_yaml::Value::String(expr) => Ok(DatasetCheck::Assert {
+                expr,
+                severity: sibling_severity.unwrap_or_default(),
+            }),
+            other => {
+                let spec: CustomExprDe = typed_ds_value(
+                    name,
+                    "an expression string or a map with `expr`",
+                    r#"- assert: "SUM(amount) = 1000""#,
+                    other,
+                )?;
+                let severity = resolve_severity(name, spec.severity, sibling_severity)?;
+                Ok(DatasetCheck::Assert {
+                    expr: spec.expr,
+                    severity,
+                })
+            }
+        },
+        "references" => {
+            let spec: ReferencesDe = typed_ds_value(
+                name,
+                "a map with `columns` and `dataset` (and optionally `to`)",
+                "- references: { columns: [policy_id], dataset: policies }",
+                value,
+            )?;
+            if spec.columns.is_empty() {
+                return Err(
+                    "`references` needs at least one column in `columns`; e.g. `- references: { columns: [policy_id], dataset: policies }`"
+                        .to_owned(),
+                );
+            }
+            if spec.dataset.trim().is_empty() {
+                return Err(
+                    "`references` needs the name of the dataset it points at in `dataset`"
+                        .to_owned(),
+                );
+            }
+            let to = spec.to.unwrap_or_else(|| spec.columns.clone());
+            if to.len() != spec.columns.len() {
+                return Err(format!(
+                    "`references` lists {} column(s) in `columns` but {} in `to`; they pair up position by position, so the counts must match",
+                    spec.columns.len(),
+                    to.len()
+                ));
+            }
+            let severity = resolve_severity(name, spec.severity, sibling_severity)?;
+            Ok(DatasetCheck::References {
+                columns: spec.columns,
+                dataset: spec.dataset,
+                to,
+                severity,
+            })
+        }
         other => {
             if COLUMN_CHECK_NAMES.contains(&other) {
                 return Err(format!(
@@ -1237,6 +1332,35 @@ impl Serialize for DatasetCheck {
                     map.serialize_entry("custom_expr", expr)?;
                 }
             }
+            DatasetCheck::Assert { expr, .. } => {
+                if severity == Severity::Warn {
+                    map.serialize_entry(
+                        "assert",
+                        &CustomExprSer {
+                            expr,
+                            severity: Severity::Warn,
+                        },
+                    )?;
+                } else {
+                    map.serialize_entry("assert", expr)?;
+                }
+            }
+            DatasetCheck::References {
+                columns,
+                dataset,
+                to,
+                ..
+            } => {
+                map.serialize_entry(
+                    "references",
+                    &ReferencesSer {
+                        columns,
+                        dataset,
+                        to: (to != columns).then_some(to.as_slice()),
+                        severity: (severity == Severity::Warn).then_some(Severity::Warn),
+                    },
+                )?;
+            }
         }
         if sibling_warn {
             map.serialize_entry("severity", &Severity::Warn)?;
@@ -1284,6 +1408,17 @@ impl JsonSchema for DatasetCheck {
                 }
             ]
         });
+        let references = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "columns": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+                "dataset": { "type": "string" },
+                "to": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+                "severity": severity
+            },
+            "required": ["columns", "dataset"],
+            "additionalProperties": false
+        });
         let forms = vec![
             map_form_schema("row_count_min", &count, &severity),
             map_form_schema("row_count_max", &count, &severity),
@@ -1291,6 +1426,8 @@ impl JsonSchema for DatasetCheck {
             map_form_schema("null_ratio_max", &column_ratio, &severity),
             map_form_schema("unique_ratio_min", &column_ratio, &severity),
             map_form_schema("custom_expr", &custom_expr, &severity),
+            map_form_schema("assert", &custom_expr, &severity),
+            map_form_schema("references", &references, &severity),
         ];
         value_to_schema(serde_json::json!({ "anyOf": forms }))
     }
@@ -1634,6 +1771,13 @@ pub struct Contract {
     /// Column definitions, in declaration order.
     #[serde(default)]
     pub columns: IndexMap<String, ColumnDef>,
+    /// The column (or columns, in order) that identify one row.
+    ///
+    /// Declaring it does two things: every delivery is checked for the key
+    /// being present on every row and never repeated (`dataset.primary_key`),
+    /// and other contracts can point at this one with `references`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub primary_key: Vec<String>,
     /// Dataset-level checks.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dataset_checks: Vec<DatasetCheck>,
@@ -2103,6 +2247,73 @@ mod tests {
     }
 
     #[test]
+    fn ds_assert_bare_string_and_map_form() {
+        assert_eq!(
+            ds_check(r#"assert: "SUM(amount) = 1000""#),
+            DatasetCheck::Assert {
+                expr: "SUM(amount) = 1000".into(),
+                severity: Severity::Error
+            }
+        );
+        assert_eq!(
+            ds_check(r#"assert: { expr: "COUNT(*) > 10", severity: warn }"#),
+            DatasetCheck::Assert {
+                expr: "COUNT(*) > 10".into(),
+                severity: Severity::Warn
+            }
+        );
+    }
+
+    #[test]
+    fn ds_references_defaults_to_same_column_names() {
+        assert_eq!(
+            ds_check("references: { columns: [policy_id], dataset: policies }"),
+            DatasetCheck::References {
+                columns: vec!["policy_id".into()],
+                dataset: "policies".into(),
+                to: vec!["policy_id".into()],
+                severity: Severity::Error
+            }
+        );
+        assert_eq!(
+            ds_check(
+                "references: { columns: [cust], dataset: customers, to: [customer_id], severity: warn }"
+            ),
+            DatasetCheck::References {
+                columns: vec!["cust".into()],
+                dataset: "customers".into(),
+                to: vec!["customer_id".into()],
+                severity: Severity::Warn
+            }
+        );
+    }
+
+    #[test]
+    fn ds_references_rejects_mismatched_pairing() {
+        let err = ds_check_err("references: { columns: [a, b], dataset: d, to: [x] }");
+        assert!(err.contains("pair up position by position"), "{err}");
+        let err = ds_check_err("references: { columns: [], dataset: d }");
+        assert!(err.contains("at least one column"), "{err}");
+    }
+
+    #[test]
+    fn primary_key_parses_and_round_trips() {
+        let yaml = "apiVersion: v1\ndataset: orders\nprimary_key: [order_id, line_no]\ncolumns:\n  order_id: { type: int }\n  line_no: { type: int }\n";
+        let c: Contract = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(c.primary_key, vec!["order_id", "line_no"]);
+        let out = serde_yaml::to_string(&c).unwrap();
+        assert!(out.contains("primary_key:"), "{out}");
+        let back: Contract = serde_yaml::from_str(&out).unwrap();
+        assert_eq!(back.primary_key, c.primary_key);
+        let none: Contract =
+            serde_yaml::from_str("apiVersion: v1\ndataset: d\ncolumns: {}\n").unwrap();
+        assert!(none.primary_key.is_empty());
+        assert!(!serde_yaml::to_string(&none)
+            .unwrap()
+            .contains("primary_key"));
+    }
+
+    #[test]
     fn ds_rejects_double_severity() {
         let err = ds_check_err(
             "{ freshness: { column: ts, max_age: 1h, severity: warn }, severity: error }",
@@ -2247,6 +2458,26 @@ mod tests {
             },
             DatasetCheck::CustomExpr {
                 expr: "x > 0".into(),
+                severity: Severity::Warn,
+            },
+            DatasetCheck::Assert {
+                expr: "SUM(x) > 0".into(),
+                severity: Severity::Error,
+            },
+            DatasetCheck::Assert {
+                expr: "SUM(x) > 0".into(),
+                severity: Severity::Warn,
+            },
+            DatasetCheck::References {
+                columns: vec!["a".into(), "b".into()],
+                dataset: "other".into(),
+                to: vec!["a".into(), "b".into()],
+                severity: Severity::Error,
+            },
+            DatasetCheck::References {
+                columns: vec!["a".into()],
+                dataset: "other".into(),
+                to: vec!["id".into()],
                 severity: Severity::Warn,
             },
         ];

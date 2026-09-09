@@ -624,6 +624,82 @@
             "custom_expr"
           ],
           "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "assert": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "expr": {
+                      "type": "string"
+                    },
+                    "severity": {
+                      "$ref": "#/definitions/Severity"
+                    }
+                  },
+                  "required": [
+                    "expr"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "severity": {
+              "$ref": "#/definitions/Severity"
+            }
+          },
+          "required": [
+            "assert"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "references": {
+              "additionalProperties": false,
+              "properties": {
+                "columns": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1,
+                  "type": "array"
+                },
+                "dataset": {
+                  "type": "string"
+                },
+                "severity": {
+                  "$ref": "#/definitions/Severity"
+                },
+                "to": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1,
+                  "type": "array"
+                }
+              },
+              "required": [
+                "columns",
+                "dataset"
+              ],
+              "type": "object"
+            },
+            "severity": {
+              "$ref": "#/definitions/Severity"
+            }
+          },
+          "required": [
+            "references"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -1156,6 +1232,13 @@
         "string",
         "null"
       ]
+    },
+    "primary_key": {
+      "description": "The column (or columns, in order) that identify one row.\n\nDeclaring it does two things: every delivery is checked for the key being present on every row and never repeated (`dataset.primary_key`), and other contracts can point at this one with `references`.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     },
     "settings": {
       "allOf": [

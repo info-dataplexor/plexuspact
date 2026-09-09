@@ -15,6 +15,7 @@ polars = { workspace = true }
 thiserror = { workspace = true }
 regex = { workspace = true }
 ahash = { workspace = true }
+sha2 = { workspace = true }
 chrono = { workspace = true }
 humantime = { workspace = true }
 serde = { workspace = true }

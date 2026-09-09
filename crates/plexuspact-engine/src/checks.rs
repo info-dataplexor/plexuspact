@@ -1,7 +1,8 @@
 //! Check executors. Each implements [`Check`]: fold per-batch state, then
 //! [`Check::finalize`] into a [`CheckOutcome`].
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
+use std::sync::Arc;
 
 use ahash::AHashSet;
 use plexuspact_contract::{EnumValue, KnownFormat, LengthSpec, Number, Severity};
@@ -11,6 +12,7 @@ use serde_json::json;
 use crate::column::{ColumnData, Parsed};
 use crate::error::EngineError;
 use crate::formats::validator;
+use crate::keys::{hash_row, render_row, KeySet, ReferenceSets};
 use crate::CheckOutcome;
 
 /// Per-batch inputs shared by all checks.
@@ -1007,6 +1009,536 @@ impl Check for CustomExprCheck {
         let message =
             failed.then(|| format!("{} row(s) failed `{}`", self.acc.rows_failed, self.expr_src));
         outcome_row(self.meta, self.acc, message)
+    }
+}
+
+// ──────────────────────────── primary_key ───────────────────────────────
+
+/// The declared key: on every row, never repeated. Folds the key set that a
+/// `references` check in another contract consults, which is why it lives
+/// outside the [`Check`] list — its state outlives its outcome.
+pub(crate) struct PrimaryKeyCheck {
+    pub meta: Meta,
+    columns: Vec<String>,
+    /// Key columns the source does not have; the check cannot run then.
+    missing: Vec<String>,
+    set: KeySet,
+    acc: RowAccum,
+    null_rows: u64,
+    duplicate_rows: u64,
+    first_duplicate: Option<String>,
+}
+
+impl PrimaryKeyCheck {
+    pub fn new(meta: Meta, columns: Vec<String>, present: &BTreeSet<String>) -> Self {
+        let missing = columns
+            .iter()
+            .filter(|c| !present.contains(*c))
+            .cloned()
+            .collect();
+        PrimaryKeyCheck {
+            meta,
+            set: KeySet::new(columns.clone()),
+            columns,
+            missing,
+            acc: RowAccum::default(),
+            null_rows: 0,
+            duplicate_rows: 0,
+            first_duplicate: None,
+        }
+    }
+
+    pub fn eval_batch(&mut self, view: &BatchView) {
+        if !self.missing.is_empty() {
+            return;
+        }
+        let Some(raw) = key_columns(&self.columns, view) else {
+            return;
+        };
+        let height = raw.first().map_or(0, |c| c.len());
+        for row in 0..height {
+            self.acc.rows_evaluated += 1;
+            let abs = view.base_row + row as u64;
+            match hash_row(&raw, row) {
+                None => {
+                    self.null_rows += 1;
+                    let shown = format!("{} (null key)", render_row(&self.columns, &raw, row));
+                    self.acc.record_failure(abs, shown, view.sample_budget);
+                }
+                Some(hash) => {
+                    if !self.set.insert(hash) {
+                        self.duplicate_rows += 1;
+                        let shown = render_row(&self.columns, &raw, row);
+                        if self.first_duplicate.is_none() {
+                            self.first_duplicate = Some(shown.clone());
+                        }
+                        self.acc.record_failure(abs, shown, view.sample_budget);
+                    }
+                }
+            }
+        }
+    }
+
+    /// The outcome, plus the key set when every key column was there.
+    pub fn finish(self) -> (CheckOutcome, Option<KeySet>) {
+        if !self.missing.is_empty() {
+            let outcome = CheckOutcome {
+                id: self.meta.id,
+                column: self.meta.column,
+                kind: self.meta.kind.to_owned(),
+                params: self.meta.params,
+                severity: self.meta.severity,
+                failed: true,
+                rows_evaluated: None,
+                rows_failed: None,
+                observed: std::collections::BTreeMap::new(),
+                samples: Vec::new(),
+                message: Some(format!(
+                    "key column(s) missing from the source: {}",
+                    self.missing.join(", ")
+                )),
+            };
+            return (outcome, None);
+        }
+        let failed = self.acc.rows_failed > 0;
+        let message = failed.then(|| {
+            let mut parts = Vec::new();
+            if self.duplicate_rows > 0 {
+                parts.push(match &self.first_duplicate {
+                    Some(v) => format!("{} repeated key(s), e.g. \"{v}\"", self.duplicate_rows),
+                    None => format!("{} repeated key(s)", self.duplicate_rows),
+                });
+            }
+            if self.null_rows > 0 {
+                parts.push(format!("{} row(s) with a null in the key", self.null_rows));
+            }
+            parts.join("; ")
+        });
+        let mut outcome = outcome_row(self.meta, self.acc, message);
+        outcome
+            .observed
+            .insert("distinct_keys".to_owned(), json!(self.set.len()));
+        outcome
+            .observed
+            .insert("duplicate_rows".to_owned(), json!(self.duplicate_rows));
+        outcome
+            .observed
+            .insert("null_key_rows".to_owned(), json!(self.null_rows));
+        (outcome, Some(self.set))
+    }
+}
+
+/// The raw string columns of a key, in key order; `None` when a batch lacks
+/// one of them (a missing column is reported by `column_present` already).
+fn key_columns<'a>(columns: &[String], view: &BatchView<'a>) -> Option<Vec<&'a [Option<String>]>> {
+    columns
+        .iter()
+        .map(|c| view.columns.get(c).map(|col| col.raw.as_slice()))
+        .collect()
+}
+
+// ──────────────────────────── references ────────────────────────────────
+
+/// Every complete key tuple in `columns` must exist in another dataset's key
+/// set. Rows with a null in any key column are not evaluated, as in SQL.
+/// Without a key set for the dataset the check cannot run, and says so — a
+/// reference nobody could look up is not a reference that held.
+pub(crate) struct ReferencesCheck {
+    pub meta: Meta,
+    columns: Vec<String>,
+    dataset: String,
+    keys: Result<Arc<KeySet>, String>,
+    acc: RowAccum,
+    null_rows: u64,
+    first_missing: Option<String>,
+}
+
+impl ReferencesCheck {
+    pub fn new(
+        meta: Meta,
+        columns: Vec<String>,
+        dataset: String,
+        to: &[String],
+        references: &ReferenceSets,
+    ) -> Self {
+        let keys = match references.get(&dataset) {
+            None => Err(format!(
+                "no keys known for `{dataset}`: pass `--reference {dataset}=<file>` on the command line, or register a contract for `{dataset}` with a `primary_key` and let one delivery pass"
+            )),
+            Some(set) if set.columns != to => Err(format!(
+                "the keys known for `{dataset}` are [{}], but this check points at [{}]; make `to` match that dataset's primary_key",
+                set.columns.join(", "),
+                to.join(", ")
+            )),
+            Some(set) => Ok(Arc::clone(set)),
+        };
+        ReferencesCheck {
+            meta,
+            columns,
+            dataset,
+            keys,
+            acc: RowAccum::default(),
+            null_rows: 0,
+            first_missing: None,
+        }
+    }
+}
+
+impl Check for ReferencesCheck {
+    fn eval_batch(&mut self, view: &BatchView) -> Result<(), EngineError> {
+        let Ok(keys) = &self.keys else {
+            return Ok(());
+        };
+        let Some(raw) = key_columns(&self.columns, view) else {
+            return Ok(());
+        };
+        let height = raw.first().map_or(0, |c| c.len());
+        for row in 0..height {
+            let Some(hash) = hash_row(&raw, row) else {
+                self.null_rows += 1;
+                continue;
+            };
+            self.acc.rows_evaluated += 1;
+            if !keys.contains(hash) {
+                let shown = render_row(&self.columns, &raw, row);
+                if self.first_missing.is_none() {
+                    self.first_missing = Some(shown.clone());
+                }
+                let abs = view.base_row + row as u64;
+                self.acc.record_failure(abs, shown, view.sample_budget);
+            }
+        }
+        Ok(())
+    }
+
+    fn finalize(self: Box<Self>, _total: u64) -> CheckOutcome {
+        let keys = match self.keys {
+            Err(why) => {
+                return CheckOutcome {
+                    id: self.meta.id,
+                    column: self.meta.column,
+                    kind: self.meta.kind.to_owned(),
+                    params: self.meta.params,
+                    severity: self.meta.severity,
+                    failed: true,
+                    rows_evaluated: None,
+                    rows_failed: None,
+                    observed: std::collections::BTreeMap::new(),
+                    samples: Vec::new(),
+                    message: Some(format!("check could not run: {why}")),
+                };
+            }
+            Ok(keys) => keys,
+        };
+        let failed = self.acc.rows_failed > 0;
+        let message = failed.then(|| match &self.first_missing {
+            Some(v) => format!(
+                "{} row(s) point at keys `{}` does not have, e.g. \"{v}\"",
+                self.acc.rows_failed, self.dataset
+            ),
+            None => format!(
+                "{} row(s) point at keys `{}` does not have",
+                self.acc.rows_failed, self.dataset
+            ),
+        });
+        let dataset = self.dataset.clone();
+        let null_rows = self.null_rows;
+        let mut outcome = outcome_row(self.meta, self.acc, message);
+        outcome
+            .observed
+            .insert("referenced_dataset".to_owned(), json!(dataset));
+        outcome
+            .observed
+            .insert("referenced_keys".to_owned(), json!(keys.len()));
+        outcome
+            .observed
+            .insert("rows_skipped_null".to_owned(), json!(null_rows));
+        outcome
+    }
+}
+
+// ─────────────────────────────── assert ─────────────────────────────────
+
+/// One SQL statement about the whole dataset — `SUM(amount) = 1000`,
+/// `COUNT(DISTINCT id) = COUNT(*)` — evaluated once, after every row has been
+/// read. Only the columns the expression names are kept between batches, so
+/// memory grows with the width of the assertion, not the width of the file.
+///
+/// Text sources arrive with every column as a string; the columns the
+/// contract declares as numbers, dates, or booleans are converted before the
+/// expression runs, so `SUM(amount)` adds numbers whether the file was CSV or
+/// Parquet. A per-row rule is `custom_expr`; an assertion must reduce to a
+/// single true or false, and null is a failure, never a quiet pass.
+pub(crate) struct AssertCheck {
+    pub meta: Meta,
+    expr_src: String,
+    parsed: Option<Expr>,
+    /// Columns the expression names; `None` when it selects columns by
+    /// pattern (wildcard, position) and everything has to be kept.
+    needed: Option<Vec<String>>,
+    declared: HashMap<String, plexuspact_contract::ColType>,
+    kept: Option<DataFrame>,
+    rows: u64,
+    error: Option<String>,
+}
+
+/// Name of the marker column kept so a frame with no referenced columns
+/// still knows how many rows it has (`COUNT(*)`).
+const ROW_MARKER: &str = "__plexuspact_row";
+
+impl AssertCheck {
+    pub fn new(
+        meta: Meta,
+        expr_src: String,
+        declared: HashMap<String, plexuspact_contract::ColType>,
+    ) -> Self {
+        let (parsed, needed, error) = match polars::sql::sql_expr(&expr_src) {
+            Ok(e) => {
+                let needed = referenced_columns(&e);
+                (Some(e), needed, None)
+            }
+            Err(e) => (None, None, Some(format!("invalid assert: {e}"))),
+        };
+        AssertCheck {
+            meta,
+            expr_src,
+            parsed,
+            needed,
+            declared,
+            kept: None,
+            rows: 0,
+            error,
+        }
+    }
+
+    fn errored(meta: Meta, why: String) -> CheckOutcome {
+        CheckOutcome {
+            id: meta.id,
+            column: meta.column,
+            kind: meta.kind.to_owned(),
+            params: meta.params,
+            severity: meta.severity,
+            failed: true,
+            rows_evaluated: None,
+            rows_failed: None,
+            observed: std::collections::BTreeMap::new(),
+            samples: Vec::new(),
+            message: Some(format!("check could not run: {why}")),
+        }
+    }
+
+    /// Conversions for the kept columns that a text source left as strings.
+    fn conversions(&self, frame: &DataFrame) -> Vec<Expr> {
+        let mut out = Vec::new();
+        for column in frame.get_columns() {
+            let name = column.name().as_str();
+            if column.dtype() != &DataType::String {
+                continue;
+            }
+            let Some(declared) = self.declared.get(name) else {
+                continue;
+            };
+            if let Some(expr) = typed_view(name, *declared) {
+                out.push(expr);
+            }
+        }
+        out
+    }
+}
+
+/// The expression that reads a text column as its declared type; `None` for
+/// strings, which need no conversion.
+fn typed_view(name: &str, declared: plexuspact_contract::ColType) -> Option<Expr> {
+    use plexuspact_contract::ColType;
+    let source = col(name);
+    let converted = match declared {
+        ColType::String => return None,
+        ColType::Int => source.cast(DataType::Int64),
+        ColType::Float => source.cast(DataType::Float64),
+        ColType::Date => source.cast(DataType::Date),
+        ColType::Datetime => source.cast(DataType::Datetime(TimeUnit::Microseconds, None)),
+        ColType::Bool => {
+            let lower = source.str().to_lowercase();
+            let truthy = Series::new("".into(), ["true", "t", "yes", "y", "1"]);
+            let falsy = Series::new("".into(), ["false", "f", "no", "n", "0"]);
+            when(lower.clone().is_in(lit(truthy)))
+                .then(lit(true))
+                .when(lower.is_in(lit(falsy)))
+                .then(lit(false))
+                .otherwise(lit(NULL).cast(DataType::Boolean))
+        }
+    };
+    Some(converted.alias(name))
+}
+
+/// The columns an expression names, or `None` when it reaches for columns by
+/// pattern and the whole frame has to be kept.
+fn referenced_columns(expr: &Expr) -> Option<Vec<String>> {
+    let mut out: Vec<String> = Vec::new();
+    for node in expr {
+        match node {
+            Expr::Column(name) => {
+                let name = name.to_string();
+                if !out.contains(&name) {
+                    out.push(name);
+                }
+            }
+            Expr::Columns(names) => {
+                for name in names.iter() {
+                    let name = name.to_string();
+                    if !out.contains(&name) {
+                        out.push(name);
+                    }
+                }
+            }
+            Expr::Wildcard | Expr::Nth(_) | Expr::DtypeColumn(_) => return None,
+            _ => {}
+        }
+    }
+    Some(out)
+}
+
+impl Check for AssertCheck {
+    fn eval_batch(&mut self, view: &BatchView) -> Result<(), EngineError> {
+        if self.error.is_some() || self.parsed.is_none() {
+            return Ok(());
+        }
+        let height = view.df.height();
+        self.rows += height as u64;
+        let slice = match &self.needed {
+            None => view.df.clone(),
+            Some(names) => {
+                let mut present = Vec::with_capacity(names.len());
+                for name in names {
+                    if view.df.column(name).is_ok() {
+                        present.push(name.as_str());
+                    } else {
+                        self.error = Some(format!(
+                            "assert names column `{name}`, which the source does not have"
+                        ));
+                        return Ok(());
+                    }
+                }
+                if present.is_empty() {
+                    let marker = Series::new(ROW_MARKER.into(), vec![0u32; height]);
+                    DataFrame::new(vec![marker.into()])?
+                } else {
+                    view.df.select(present)?
+                }
+            }
+        };
+        match &mut self.kept {
+            None => self.kept = Some(slice),
+            Some(frame) => {
+                frame.vstack_mut(&slice)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn finalize(self: Box<Self>, _total: u64) -> CheckOutcome {
+        if let Some(why) = self.error {
+            return Self::errored(self.meta, why);
+        }
+        let Some(expr) = self.parsed.clone() else {
+            return Self::errored(self.meta, "invalid assert".to_owned());
+        };
+        // No rows at all: evaluate over an empty frame with the named columns,
+        // so `COUNT(*) = 0` can hold and `SUM(x) > 0` can fail honestly.
+        let frame = match self.kept.clone() {
+            Some(mut f) => {
+                f.as_single_chunk_par();
+                f
+            }
+            None => {
+                let names = self.needed.clone().unwrap_or_default();
+                let columns: Vec<Column> = names
+                    .iter()
+                    .map(|n| Series::new_empty(n.as_str().into(), &DataType::String).into())
+                    .collect();
+                match DataFrame::new(columns) {
+                    Ok(f) => f,
+                    Err(e) => return Self::errored(self.meta, e.to_string()),
+                }
+            }
+        };
+        let conversions = self.conversions(&frame);
+        let mut lazy = frame.lazy();
+        if !conversions.is_empty() {
+            lazy = lazy.with_columns(conversions);
+        }
+        let result = lazy.select([expr.alias("__plexuspact_assert")]).collect();
+        let out = match result {
+            Ok(f) => f,
+            Err(e) => {
+                return Self::errored(
+                    self.meta,
+                    format!("assert `{}` failed to evaluate: {e}", self.expr_src),
+                )
+            }
+        };
+        let series = match out.column("__plexuspact_assert") {
+            Ok(c) => c.as_materialized_series().clone(),
+            Err(e) => return Self::errored(self.meta, e.to_string()),
+        };
+        if series.len() != 1 {
+            return Self::errored(
+                self.meta,
+                format!(
+                    "assert `{}` produced {} values, not one; an assertion is about the whole dataset (`SUM(amount) = 1000`) — a rule for every row belongs in `custom_expr`",
+                    self.expr_src,
+                    series.len()
+                ),
+            );
+        }
+        let verdict = match series.bool() {
+            Ok(b) => b.get(0),
+            Err(_) => {
+                return Self::errored(
+                    self.meta,
+                    format!(
+                        "assert `{}` produced a {} value, not true/false",
+                        self.expr_src,
+                        series.dtype()
+                    ),
+                )
+            }
+        };
+        let (failed, message) = match verdict {
+            Some(true) => (false, None),
+            Some(false) => (
+                true,
+                Some(format!(
+                    "`{}` is false over {} row(s)",
+                    self.expr_src, self.rows
+                )),
+            ),
+            None => (
+                true,
+                Some(format!(
+                    "`{}` came out null over {} row(s) — an average of no rows, or a column that could not be read as its declared type",
+                    self.expr_src, self.rows
+                )),
+            ),
+        };
+        let mut observed = std::collections::BTreeMap::new();
+        observed.insert("rows".to_owned(), json!(self.rows));
+        if let Some(names) = &self.needed {
+            observed.insert("columns".to_owned(), json!(names));
+        }
+        CheckOutcome {
+            id: self.meta.id,
+            column: self.meta.column,
+            kind: self.meta.kind.to_owned(),
+            params: self.meta.params,
+            severity: self.meta.severity,
+            failed,
+            rows_evaluated: None,
+            rows_failed: None,
+            observed,
+            samples: Vec::new(),
+            message,
+        }
     }
 }
 

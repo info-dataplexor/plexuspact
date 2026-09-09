@@ -23,6 +23,13 @@ pub enum EngineError {
         kind: &'static str,
     },
 
+    /// A key column named for a key set is not in the source it was read from.
+    #[error("key column `{column}` is not in the source")]
+    MissingKeyColumn {
+        /// The column that was asked for.
+        column: String,
+    },
+
     /// An internal Polars operation failed unexpectedly.
     #[error("internal data-processing error: {0}")]
     Polars(#[from] polars::error::PolarsError),

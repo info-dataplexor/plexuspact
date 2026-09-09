@@ -98,6 +98,7 @@ pub fn validate(contract: &Contract) -> Vec<LintError> {
         lint_column(name, col, &mut out);
     }
 
+    lint_primary_key(contract, &mut out);
     for (i, check) in contract.dataset_checks.iter().enumerate() {
         lint_dataset_check(i, check, contract, &mut out);
     }
@@ -669,9 +670,68 @@ fn lint_dataset_check(
                 ));
             }
         }
+        DatasetCheck::References {
+            columns, dataset, ..
+        } => {
+            for column in columns {
+                if !contract.columns.contains_key(column) {
+                    out.push(LintError::error(
+                        path.clone(),
+                        format!("`references` uses unknown column `{column}`"),
+                        unknown_column_help(column),
+                    ));
+                }
+            }
+            let mut seen = std::collections::BTreeSet::new();
+            for column in columns {
+                if !seen.insert(column) {
+                    out.push(LintError::error(
+                        path.clone(),
+                        format!("`references` lists column `{column}` twice"),
+                        Some("name each referencing column once".into()),
+                    ));
+                }
+            }
+            if dataset == &contract.dataset && columns == &contract.primary_key {
+                out.push(LintError::warning(
+                    path.clone(),
+                    "`references` points a dataset's primary key at itself, which always holds",
+                    Some("reference a different dataset, or different columns of this one (e.g. `parent_id` → `id`)".into()),
+                ));
+            }
+        }
         DatasetCheck::RowCountMin { .. }
         | DatasetCheck::RowCountMax { .. }
-        | DatasetCheck::CustomExpr { .. } => {}
+        | DatasetCheck::CustomExpr { .. }
+        | DatasetCheck::Assert { .. } => {}
+    }
+}
+
+fn lint_primary_key(contract: &Contract, out: &mut Vec<LintError>) {
+    let mut seen = std::collections::BTreeSet::new();
+    for column in &contract.primary_key {
+        if !contract.columns.contains_key(column) {
+            out.push(LintError::error(
+                "primary_key",
+                format!("`primary_key` names unknown column `{column}`"),
+                Some(format!(
+                    "declare `{column}` under `columns:` or pick from: {}",
+                    contract
+                        .columns
+                        .keys()
+                        .map(String::as_str)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )),
+            ));
+        }
+        if !seen.insert(column) {
+            out.push(LintError::error(
+                "primary_key",
+                format!("`primary_key` lists column `{column}` twice"),
+                Some("name each key column once".into()),
+            ));
+        }
     }
 }
 

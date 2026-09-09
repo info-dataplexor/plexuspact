@@ -2,7 +2,10 @@
 
 use chrono::{DateTime, Utc};
 use plexuspact_contract::{Consumer, Contract, InputSettings, Severity};
-use plexuspact_engine::{execute, profile, CheckOutcome, DatasetProfile, RunOptions};
+use plexuspact_engine::{
+    collect_key_set, execute, profile, CheckOutcome, DatasetProfile, KeySet, ReferenceSets,
+    RunOptions,
+};
 use plexuspact_io::{
     delimiter_byte, detect, open, resolve, FixedWidthOptions, InputFormat, IoError, ReadOptions,
     Source,
@@ -37,6 +40,43 @@ pub struct RunRequest {
     pub redact_samples: bool,
     /// Injected clock for `freshness`; `None` uses the wall clock at run start.
     pub now: Option<DateTime<Utc>>,
+    /// Key sets of other datasets, for the contract's `references` checks.
+    pub references: ReferenceSets,
+}
+
+/// What a run produced besides its result: state that is not part of the
+/// wire-format document but that the next run needs.
+#[derive(Debug, Clone, Default)]
+pub struct RunArtifacts {
+    /// The distinct primary-key tuples this delivery carried, when the
+    /// contract declares a `primary_key` and every key column was present.
+    /// Kept by whoever stores runs so a later `references` check against this
+    /// dataset has something to look keys up in.
+    pub primary_key: Option<KeySet>,
+}
+
+/// The knobs of one validation, apart from what is read and how.
+#[derive(Debug, Clone)]
+pub struct CheckOptions {
+    /// Failure samples captured per check.
+    pub sample_failures: usize,
+    /// Whether to mask sample values in the result.
+    pub redact_samples: bool,
+    /// Injected clock for `freshness`; `None` uses the wall clock at run start.
+    pub now: Option<DateTime<Utc>>,
+    /// Key sets of other datasets, for the contract's `references` checks.
+    pub references: ReferenceSets,
+}
+
+impl Default for CheckOptions {
+    fn default() -> Self {
+        CheckOptions {
+            sample_failures: 5,
+            redact_samples: false,
+            now: None,
+            references: ReferenceSets::none(),
+        }
+    }
 }
 
 /// Value written in place of a redacted sample.
@@ -217,6 +257,37 @@ pub fn run_check_with(
     now: Option<DateTime<Utc>>,
     tool_version: &str,
 ) -> Result<RunResult, CoreError> {
+    let options = CheckOptions {
+        sample_failures,
+        redact_samples,
+        now,
+        references: ReferenceSets::none(),
+    };
+    run_check_full(
+        contract,
+        contract_bytes,
+        contract_path,
+        data_path,
+        overrides,
+        &options,
+        tool_version,
+    )
+    .map(|(result, _)| result)
+}
+
+/// [`run_check_with`] that also hands back the run's [`RunArtifacts`] and
+/// takes the key sets its `references` checks consult. The entry point for a
+/// caller that keeps runs — the CLI with `--reference`, a service storing a
+/// passing delivery's keys for the next dataset that points at it.
+pub fn run_check_full(
+    contract: Contract,
+    contract_bytes: Vec<u8>,
+    contract_path: Option<String>,
+    data_path: &str,
+    overrides: &InputOverrides,
+    options: &CheckOptions,
+    tool_version: &str,
+) -> Result<(RunResult, RunArtifacts), CoreError> {
     let source = resolve(data_path);
     let read_options = read_options_for(&contract.settings.input, overrides)?;
     let req = RunRequest {
@@ -226,11 +297,26 @@ pub fn run_check_with(
         source,
         source_display: data_path.to_owned(),
         read_options,
-        sample_failures,
-        redact_samples,
-        now,
+        sample_failures: options.sample_failures,
+        redact_samples: options.redact_samples,
+        now: options.now,
+        references: options.references.clone(),
     };
-    run(req, tool_version)
+    run_with_artifacts(req, tool_version)
+}
+
+/// Reads a file (or stdin) and collects the distinct key tuples found in
+/// `columns` — the other side of a `references` check when the referenced
+/// dataset is a file at hand rather than a run a service remembers.
+pub fn key_set_from_path(
+    data_path: &str,
+    columns: &[String],
+    overrides: &InputOverrides,
+) -> Result<KeySet, CoreError> {
+    let source = resolve(data_path);
+    let read_options = read_options_for(&InputSettings::default(), overrides)?;
+    let mut source = open(&source, &read_options)?;
+    Ok(collect_key_set(source.as_mut(), columns)?)
 }
 
 /// Convenience entry point for `plexuspact init`: profiles a data file/stdin
@@ -260,6 +346,14 @@ pub fn profile_path_with(
 
 /// Runs the contract's checks against the source and assembles a [`RunResult`].
 pub fn run(req: RunRequest, tool_version: &str) -> Result<RunResult, CoreError> {
+    run_with_artifacts(req, tool_version).map(|(result, _)| result)
+}
+
+/// [`run`], also returning what the run produced for later runs to use.
+pub fn run_with_artifacts(
+    req: RunRequest,
+    tool_version: &str,
+) -> Result<(RunResult, RunArtifacts), CoreError> {
     let started_at = Utc::now();
     let now = req.now.unwrap_or(started_at);
 
@@ -270,6 +364,7 @@ pub fn run(req: RunRequest, tool_version: &str) -> Result<RunResult, CoreError> 
     let opts = RunOptions {
         sample_failures: req.sample_failures,
         now,
+        references: req.references.clone(),
     };
     let engine_out = execute(source.as_mut(), &req.contract, &opts)?;
 
@@ -301,8 +396,11 @@ pub fn run(req: RunRequest, tool_version: &str) -> Result<RunResult, CoreError> 
     };
 
     let content_sha256 = sha256_hex(&req.contract_bytes);
+    let artifacts = RunArtifacts {
+        primary_key: engine_out.primary_key,
+    };
 
-    Ok(RunResult {
+    let result = RunResult {
         result_schema_version: RESULT_SCHEMA_VERSION,
         tool_version: tool_version.to_owned(),
         contract: ContractRef {
@@ -325,7 +423,8 @@ pub fn run(req: RunRequest, tool_version: &str) -> Result<RunResult, CoreError> 
         summary,
         checks,
         observed_schema,
-    })
+    };
+    Ok((result, artifacts))
 }
 
 /// Maps one engine outcome into a wire-format [`CheckResult`].

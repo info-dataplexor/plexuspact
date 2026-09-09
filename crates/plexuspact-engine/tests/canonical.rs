@@ -21,6 +21,7 @@ fn run_at(now_rfc3339: &str) -> EngineOutput {
         &RunOptions {
             sample_failures: 5,
             now,
+            ..RunOptions::default()
         },
     )
     .unwrap()
@@ -185,6 +186,7 @@ fn nested_array_column_yields_actionable_error() {
         &RunOptions {
             sample_failures: 5,
             now,
+            ..RunOptions::default()
         },
     )
     .expect_err("nested array column must error");

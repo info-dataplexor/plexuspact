@@ -27,6 +27,7 @@ mod profile;
 mod checks;
 mod exec;
 mod hll;
+pub mod keys;
 mod plan;
 
 pub use profile::{profile, ColumnProfile, DatasetProfile};
@@ -38,6 +39,7 @@ use plexuspact_contract::Severity;
 
 pub use error::EngineError;
 pub use exec::execute;
+pub use keys::{collect_key_set, hash_key, KeySet, ReferenceSets};
 
 /// Options controlling a run.
 #[derive(Debug, Clone)]
@@ -47,6 +49,10 @@ pub struct RunOptions {
     /// Clock used for `freshness` — injected for determinism (never `Utc::now()`
     /// inside the engine).
     pub now: DateTime<Utc>,
+    /// Key sets of other datasets, for `references` checks. A check whose
+    /// dataset has no set here reports that it could not run — it never
+    /// passes quietly.
+    pub references: ReferenceSets,
 }
 
 impl Default for RunOptions {
@@ -54,6 +60,7 @@ impl Default for RunOptions {
         RunOptions {
             sample_failures: 5,
             now: DateTime::<Utc>::UNIX_EPOCH,
+            references: ReferenceSets::none(),
         }
     }
 }
@@ -77,8 +84,12 @@ pub struct EngineOutput {
     /// would be the reader's convention rather than the source's declaration.
     pub observed_typed: bool,
     /// Per-check outcomes, in a stable order (schema checks, then column checks
-    /// in contract order, then dataset checks).
+    /// in contract order, then the primary key, then dataset checks).
     pub checks: Vec<CheckOutcome>,
+    /// The distinct primary-key tuples this run saw, when the contract declares
+    /// a `primary_key` and every key column was present. What a later run of
+    /// another dataset checks its `references` against.
+    pub primary_key: Option<KeySet>,
 }
 
 /// One column as the source presented it.

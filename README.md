@@ -143,6 +143,9 @@ Full walkthrough: [the 5-minute tutorial](docs/src/quickstart.md).
 | Dataset | `row_count_min` / `row_count_max` | Total row count bounds |
 | Dataset | `freshness` | Newest value in a timestamp column is at most `max_age` old |
 | Dataset | `null_ratio_max` / `unique_ratio_min` | Null/distinct ratio bounds per column |
+| Dataset | `primary_key` | The row identity: present on every row, never repeated |
+| Dataset | `assert` | One SQL statement about the whole dataset (`SUM(amount) = 1000`) |
+| Dataset | `references` | Every key exists in another dataset's last passing delivery, or a file |
 | Escape hatch | `custom_expr` | Any Polars boolean expression |
 
 Every check takes an optional `severity: error | warn` (default `error`). See the [contract reference](docs/src/contract-reference.md) for YAML examples of each.
@@ -167,7 +170,7 @@ Recipes for GitLab CI, pre-commit, Airflow, and cron are in [docs/src/ci-recipes
 plexuspact init <path> [--out contract.yaml]        # profile data, draft a contract
 plexuspact check <path|-> --contract <file>         # validate (file or stdin)
     [--format human|json|junit] [--report out.html]
-    [--strict] [--sample-failures N]
+    [--strict] [--sample-failures N] [--reference DATASET=PATH]
 plexuspact diff <old.yaml> <new.yaml>                # classify contract changes (exit 1 on breaking)
 plexuspact validate-contract <file>                  # lint a contract without data
 plexuspact push <result.json|->                      # report a saved result to PlexusPact Cloud

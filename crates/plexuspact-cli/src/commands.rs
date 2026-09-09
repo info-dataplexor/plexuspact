@@ -5,11 +5,13 @@ use std::io::{IsTerminal, Write};
 use std::path::Path;
 
 use owo_colors::OwoColorize;
+use plexuspact_contract::DatasetCheck;
 use plexuspact_contract::{
     databricks_dlt, diff, validate, Change, Contract, DltLang, Impact, LintLevel,
 };
 use plexuspact_core::{
-    draft_contract_with_input, profile_path_with, run_check_with, CoreError, RunResult,
+    draft_contract_with_input, key_set_from_path, profile_path_with, run_check_full, CheckOptions,
+    CoreError, ReferenceSets, RunResult,
 };
 use plexuspact_report::{
     render_html, render_human, render_json, render_junit, render_openlineage, HumanOptions,
@@ -30,6 +32,86 @@ type CmdResult = Result<u8, Box<dyn std::error::Error>>;
 /// A loaded contract with its raw bytes (for the registry content hash), or
 /// `None` when loading failed (a diagnostic was already printed).
 type LoadedContract = Result<Option<(Contract, Vec<u8>)>, Box<dyn std::error::Error>>;
+
+/// Reads the key sets behind every `--reference <dataset>=<path>`. The columns
+/// read from each file are the `to` columns of the contract's `references`
+/// checks that point at that dataset, so the file is read the way the check
+/// will look it up. Prints a diagnostic and returns the exit code on failure.
+fn load_references(contract: &Contract, flags: &[String]) -> Result<ReferenceSets, u8> {
+    let mut sets = ReferenceSets::none();
+    for flag in flags {
+        let Some((dataset, path)) = flag.split_once('=') else {
+            eprintln!(
+                "{} invalid --reference `{flag}`: expected `<dataset>=<path>`, e.g. --reference customers=customers.csv",
+                err_glyph()
+            );
+            return Err(CODE_USAGE);
+        };
+        let dataset = dataset.trim();
+        let path = path.trim();
+        if dataset.is_empty() || path.is_empty() {
+            eprintln!(
+                "{} invalid --reference `{flag}`: expected `<dataset>=<path>`",
+                err_glyph()
+            );
+            return Err(CODE_USAGE);
+        }
+        let mut targets: Vec<&Vec<String>> = Vec::new();
+        for check in &contract.dataset_checks {
+            if let DatasetCheck::References {
+                dataset: target,
+                to,
+                ..
+            } = check
+            {
+                if target == dataset && !targets.contains(&to) {
+                    targets.push(to);
+                }
+            }
+        }
+        let columns = match targets.as_slice() {
+            [] => {
+                eprintln!(
+                    "{} --reference names `{dataset}`, but no `references` check in `{}` points at it",
+                    err_glyph(),
+                    contract.dataset
+                );
+                return Err(CODE_USAGE);
+            }
+            [one] => (*one).clone(),
+            many => {
+                eprintln!(
+                    "{} the `references` checks that point at `{dataset}` disagree on its key columns ({}); they must all name the same `to`",
+                    err_glyph(),
+                    many.iter()
+                        .map(|c| format!("[{}]", c.join(", ")))
+                        .collect::<Vec<_>>()
+                        .join(" vs ")
+                );
+                return Err(CODE_USAGE);
+            }
+        };
+        let overrides = plexuspact_core::InputOverrides::default();
+        match key_set_from_path(path, &columns, &overrides) {
+            Ok(set) => {
+                eprintln!(
+                    "{} read {} distinct key(s) for `{dataset}` from {path}",
+                    ok_glyph(),
+                    set.len()
+                );
+                sets.insert(dataset, set);
+            }
+            Err(e) => {
+                eprintln!(
+                    "{} could not read `{dataset}` from {path}: {e}",
+                    err_glyph()
+                );
+                return Err(CODE_USAGE);
+            }
+        }
+    }
+    Ok(sets)
+}
 
 /// Routes a parsed CLI to its handler.
 pub fn dispatch(cli: Cli) -> CmdResult {
@@ -150,18 +232,27 @@ fn cmd_check(args: CheckArgs, offline: bool) -> CmdResult {
         },
     };
 
-    let result = match run_check_with(
+    let references = match load_references(&contract, &args.reference) {
+        Ok(refs) => refs,
+        Err(code) => return Ok(code),
+    };
+
+    let options = CheckOptions {
+        sample_failures: args.sample_failures,
+        redact_samples: args.redact_samples,
+        now,
+        references,
+    };
+    let result = match run_check_full(
         contract,
         bytes,
         Some(args.contract.display().to_string()),
         &args.path,
         &args.input.overrides(),
-        args.sample_failures,
-        args.redact_samples,
-        now,
+        &options,
         tool_version(),
     ) {
-        Ok(r) => r,
+        Ok((r, _artifacts)) => r,
         Err(e) => return Ok(handle_core_error(e)),
     };
 

@@ -159,6 +159,11 @@ pub struct CheckArgs {
     /// Reference time for freshness checks (RFC 3339). Testing/reproducibility.
     #[arg(long, value_name = "RFC3339")]
     pub now: Option<String>,
+    /// A file holding the dataset a `references` check points at, as
+    /// `<dataset>=<path>`. The keys the check looks up are read from it;
+    /// repeat the flag for every referenced dataset.
+    #[arg(long, value_name = "DATASET=PATH")]
+    pub reference: Vec<String>,
     /// Require the result to be reported to PlexusPact Cloud.
     ///
     /// Reporting already happens on its own whenever `PLEXUSPACT_API_KEY` is

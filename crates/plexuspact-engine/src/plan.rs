@@ -7,11 +7,13 @@ use plexuspact_contract::{ColumnCheck, Contract, DatasetCheck, Severity};
 use serde_json::json;
 
 use crate::checks::{
-    BoundCheck, Check, ColumnsCheck, CustomExprCheck, EnumCheck, ErroredCheck, FormatCheck,
-    FreshnessCheck, LengthCheck, Meta, MissingColumnCheck, NotEmptyCheck, NullRatioCheck,
-    RegexCheck, RequiredCheck, RowCountCheck, TypeCheck, UniqueCheck, UniqueRatioCheck,
+    AssertCheck, BoundCheck, Check, ColumnsCheck, CustomExprCheck, EnumCheck, ErroredCheck,
+    FormatCheck, FreshnessCheck, LengthCheck, Meta, MissingColumnCheck, NotEmptyCheck,
+    NullRatioCheck, PrimaryKeyCheck, ReferencesCheck, RegexCheck, RequiredCheck, RowCountCheck,
+    TypeCheck, UniqueCheck, UniqueRatioCheck,
 };
 use crate::formats::format_name;
+use crate::keys::ReferenceSets;
 
 /// Builds the ordered check list for a contract against the given present
 /// source columns. `now_micros` is the injected clock for freshness.
@@ -19,6 +21,7 @@ pub(crate) fn build(
     contract: &Contract,
     present: &BTreeSet<String>,
     now_micros: i64,
+    references: &ReferenceSets,
 ) -> Vec<Box<dyn Check>> {
     let mut checks: Vec<Box<dyn Check>> = Vec::new();
 
@@ -95,10 +98,32 @@ pub(crate) fn build(
 
     // 3. Dataset checks.
     for dc in &contract.dataset_checks {
-        checks.push(compile_dataset_check(dc, now_micros));
+        checks.push(compile_dataset_check(dc, contract, now_micros, references));
     }
 
     checks
+}
+
+/// The `primary_key` check, when the contract declares one. Kept outside the
+/// ordered list because its key set is handed back to the caller.
+pub(crate) fn primary_key_check(
+    contract: &Contract,
+    present: &BTreeSet<String>,
+) -> Option<PrimaryKeyCheck> {
+    if contract.primary_key.is_empty() {
+        return None;
+    }
+    Some(PrimaryKeyCheck::new(
+        Meta {
+            id: "dataset.primary_key".to_owned(),
+            column: None,
+            kind: "primary_key",
+            params: json!({ "columns": contract.primary_key }),
+            severity: Severity::Error,
+        },
+        contract.primary_key.clone(),
+        present,
+    ))
 }
 
 fn compile_column_check(name: &str, check: &ColumnCheck) -> Box<dyn Check> {
@@ -223,9 +248,47 @@ fn compile_column_check(name: &str, check: &ColumnCheck) -> Box<dyn Check> {
     }
 }
 
-fn compile_dataset_check(dc: &DatasetCheck, now_micros: i64) -> Box<dyn Check> {
+fn compile_dataset_check(
+    dc: &DatasetCheck,
+    contract: &Contract,
+    now_micros: i64,
+    references: &ReferenceSets,
+) -> Box<dyn Check> {
     let severity = dc.severity();
     match dc {
+        DatasetCheck::Assert { expr, .. } => Box::new(AssertCheck::new(
+            Meta {
+                id: "dataset.assert".to_owned(),
+                column: None,
+                kind: "assert",
+                params: json!({ "expr": expr }),
+                severity,
+            },
+            expr.clone(),
+            contract
+                .columns
+                .iter()
+                .map(|(name, def)| (name.clone(), def.r#type))
+                .collect(),
+        )),
+        DatasetCheck::References {
+            columns,
+            dataset,
+            to,
+            ..
+        } => Box::new(ReferencesCheck::new(
+            Meta {
+                id: format!("dataset.references.{dataset}"),
+                column: None,
+                kind: "references",
+                params: json!({ "columns": columns, "dataset": dataset, "to": to }),
+                severity,
+            },
+            columns.clone(),
+            dataset.clone(),
+            to,
+            references,
+        )),
         DatasetCheck::RowCountMin { count, .. } => Box::new(RowCountCheck {
             meta: Meta {
                 id: "dataset.row_count_min".to_owned(),

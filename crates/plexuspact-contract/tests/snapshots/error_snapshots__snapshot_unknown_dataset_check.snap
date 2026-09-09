@@ -6,7 +6,8 @@ plexuspact::contract::parse
 
   × unknown check `row_cout_min` — did you mean `row_count_min`? (known
   │ checks: row_count_min, row_count_max, freshness, null_ratio_max,
-  │ unique_ratio_min, custom_expr) (at `dataset_checks[0]`)
+  │ unique_ratio_min, custom_expr, assert, references) (at
+  │ `dataset_checks[0]`)
    ╭─[contract.yaml:6:5]
  5 │ dataset_checks:
  6 │   - row_cout_min: 1

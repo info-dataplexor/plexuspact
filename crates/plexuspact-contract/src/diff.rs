@@ -128,6 +128,7 @@ pub fn diff(old: &Contract, new: &Contract) -> Vec<Change> {
     diff_migration(old, new, &mut out);
 
     diff_columns(old, new, &mut out);
+    diff_primary_key(old, new, &mut out);
     diff_dataset_checks(old, new, &mut out);
     diff_settings(old, new, &mut out);
 
@@ -723,6 +724,10 @@ fn dataset_check_key(check: &DatasetCheck) -> String {
         DatasetCheck::NullRatioMax { column, .. } => format!("null_ratio_max.{column}"),
         DatasetCheck::UniqueRatioMin { column, .. } => format!("unique_ratio_min.{column}"),
         DatasetCheck::CustomExpr { expr, .. } => format!("custom_expr.{expr}"),
+        DatasetCheck::Assert { expr, .. } => format!("assert.{expr}"),
+        DatasetCheck::References {
+            columns, dataset, ..
+        } => format!("references.{dataset}.{}", columns.join(",")),
     }
 }
 
@@ -820,7 +825,59 @@ fn dataset_check_relation(old: &DatasetCheck, new: &DatasetCheck) -> (Rel, Strin
                 (Rel::Changed, "custom expression changed".to_string())
             }
         }
+        (D::Assert { expr: a, .. }, D::Assert { expr: b, .. }) => {
+            if a == b {
+                (Rel::Same, String::new())
+            } else {
+                (Rel::Changed, "assertion changed".to_string())
+            }
+        }
+        (D::References { to: a, .. }, D::References { to: b, .. }) => {
+            if a == b {
+                (Rel::Same, String::new())
+            } else {
+                (
+                    Rel::Changed,
+                    format!(
+                        "reference target changed from [{}] to [{}]",
+                        a.join(", "),
+                        b.join(", ")
+                    ),
+                )
+            }
+        }
         _ => (Rel::Changed, "check parameters changed".to_string()),
+    }
+}
+
+/// Diffs the declared primary key. Declaring or changing one is a new promise
+/// the supplier has to keep on every delivery, so it is breaking; dropping it
+/// only removes a check.
+fn diff_primary_key(old: &Contract, new: &Contract, out: &mut Vec<Change>) {
+    match (old.primary_key.is_empty(), new.primary_key.is_empty()) {
+        (true, false) => out.push(Change {
+            impact: Impact::Breaking,
+            path: "primary_key".into(),
+            description: format!(
+                "primary key declared on [{}]: every row must now carry it, unrepeated",
+                new.primary_key.join(", ")
+            ),
+        }),
+        (false, true) => out.push(Change {
+            impact: Impact::NonBreaking,
+            path: "primary_key".into(),
+            description: format!("primary key on [{}] removed", old.primary_key.join(", ")),
+        }),
+        (false, false) if old.primary_key != new.primary_key => out.push(Change {
+            impact: Impact::Breaking,
+            path: "primary_key".into(),
+            description: format!(
+                "primary key changed from [{}] to [{}]",
+                old.primary_key.join(", "),
+                new.primary_key.join(", ")
+            ),
+        }),
+        _ => {}
     }
 }
 

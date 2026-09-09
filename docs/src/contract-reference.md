@@ -162,7 +162,7 @@ Every map-form check accepts an optional `severity: error | warn` (default `erro
 
 ## The check library
 
-Twenty core checks: 4 schema, 11 value, 5 dataset (plus the `custom_expr` escape hatch counted among them).
+Twenty-three core checks: 4 schema, 11 value, 8 dataset (the `custom_expr` escape hatch counted among them).
 
 ### Schema checks
 
@@ -330,6 +330,48 @@ dataset_checks:
   - null_ratio_max: { column: age, ratio: 0.10 }
   - unique_ratio_min: { column: session_id, ratio: 0.95 }
 ```
+
+#### 21. `primary_key`
+
+Declared at the top level, next to `columns`, because it is a fact about the dataset rather than one more rule: the column (or columns) that identify a row. Every row must carry the whole key, and no key may repeat. A row with a null in any key column fails, as does the second appearance of a key that has been seen already.
+
+```yaml
+primary_key: [order_id]          # or [region, order_id] for a composite key
+```
+
+The check reports as `dataset.primary_key`, with the number of distinct keys, repeated keys and null-key rows in `observed`. Declaring a key is a breaking change for `diff`: consumers can now rely on it. A `unique` check on the same column is still allowed but redundant.
+
+The keys a passing delivery carried are what another contract's `references` check looks up (below).
+
+#### 22. `assert`
+
+One SQL expression about the whole dataset, evaluated once after every row has been read. It must reduce to a single true or false — a total, a count, a comparison of two aggregates. A per-row rule belongs in `custom_expr`.
+
+```yaml
+dataset_checks:
+  - assert: "SUM(amount) BETWEEN 990000 AND 1010000"
+  - assert: { expr: "COUNT(DISTINCT customer_id) >= 1000", severity: warn }
+  - assert: "SUM(CASE WHEN status = 'refunded' THEN 1 ELSE 0 END) * 20 < COUNT(*)"
+```
+
+Columns are read as the type the contract declares, so `SUM(amount)` adds numbers whether the file was CSV or Parquet. The expression sees only the columns it names, which is what the engine keeps in memory across batches; memory grows with the width of the assertion, not of the file. An assertion that comes out null (an average of no rows, a column that could not be read as its declared type; a sum of no rows is 0) fails, because unknown never passes.
+
+#### 23. `references`
+
+Every complete key in `columns` must exist in another dataset — the foreign key of a contract. The other dataset is named by its contract's `dataset`; `to` names its key columns and defaults to the same names as `columns`. Rows with a null in any of the columns are not evaluated, as in SQL.
+
+```yaml
+dataset_checks:
+  - references: { columns: [customer_id], dataset: customers }
+  - references: { columns: [region, product_code], dataset: catalog, to: [region, sku], severity: warn }
+```
+
+Where the other dataset's keys come from:
+
+- On the command line, `--reference customers=customers.csv` reads them from a file: the `to` columns are collected, hashed, and never held as rows.
+- In PlexusPact Cloud, from the last passing run of the `customers` contract, which keeps the key set its `primary_key` produced. `to` must match that contract's `primary_key`.
+
+A `references` check with no key set to consult reports that it could not run, and fails: a reference nobody could look up is not one that held.
 
 ### Escape hatch: `custom_expr`
 

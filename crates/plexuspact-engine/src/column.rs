@@ -76,6 +76,21 @@ pub fn extract(
 ) -> Result<ColumnData, EngineError> {
     let column = df.column(name)?;
     let series = column.as_materialized_series();
+    let raw = raw_strings(df, name)?;
+
+    match typing {
+        InputTyping::Stringly => parse_stringly(raw, declared),
+        InputTyping::Native => extract_native(series, raw, declared),
+    }
+}
+
+/// The raw string view of a scalar column: every cell rendered as the source
+/// spelled it (a no-op in stringly mode, a cast for typed sources), nulls as
+/// `None`. Shared by the value checks, the key hashing, and the profiler so
+/// that `5` in a Parquet file and `5` in a CSV mean the same key.
+pub(crate) fn raw_strings(df: &DataFrame, name: &str) -> Result<Vec<Option<String>>, EngineError> {
+    let column = df.column(name)?;
+    let series = column.as_materialized_series();
 
     // Nested data (JSON arrays → List, objects → Struct) can't be validated as a
     // flat column. Surface a clear, actionable error rather than an opaque cast
@@ -87,14 +102,8 @@ pub fn extract(
         });
     }
 
-    // Raw string view: cast to String (a no-op in stringly mode).
     let as_string = series.cast(&DataType::String)?;
-    let raw = string_series_to_vec(&as_string)?;
-
-    match typing {
-        InputTyping::Stringly => parse_stringly(raw, declared),
-        InputTyping::Native => extract_native(series, raw, declared),
-    }
+    string_series_to_vec(&as_string)
 }
 
 /// Classifies a nested Polars dtype: JSON arrays parse to `List`/`Array`,

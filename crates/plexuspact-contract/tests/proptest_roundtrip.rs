@@ -275,6 +275,7 @@ fn contract() -> impl Strategy<Value = Contract> {
                     version,
                     consumers,
                     columns: columns.into_iter().collect::<IndexMap<_, _>>(),
+                    primary_key: Vec::new(),
                     dataset_checks,
                     migration,
                     settings,
