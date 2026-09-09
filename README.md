@@ -201,7 +201,7 @@ Build the book locally with [mdBook](https://rust-lang.github.io/mdBook/): `mdbo
 
 **Next (Phase 1.5 / v0.4):** quarantine mode (`--quarantine bad_rows/` routes failing rows losslessly with per-row reasons — routing, never mutation) and AI-assisted authoring (`init --ai`, `explain --ai`; strictly opt-in, bring your own key or local model, and never in the enforcement path — `check` results are bit-identical with AI disabled).
 
-**Later (Phase 2):** SQL sources via DataFusion, Python/Node bindings, ODCS import/export, and the hosted registry below.
+**Later (Phase 2):** SQL sources via DataFusion, Python/Node bindings, and the hosted registry below. ODCS 3.1 import/export is already in (`plexuspact export --target odcs`, `plexuspact import`).
 
 ## Open core, honestly
 

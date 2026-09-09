@@ -7,7 +7,7 @@ use std::path::Path;
 use owo_colors::OwoColorize;
 use plexuspact_contract::DatasetCheck;
 use plexuspact_contract::{
-    databricks_dlt, diff, validate, Change, Contract, DltLang, Impact, LintLevel,
+    databricks_dlt, diff, odcs, validate, Change, Contract, DltLang, Impact, LintLevel,
 };
 use plexuspact_core::{
     draft_contract_with_input, key_set_from_path, profile_path_with, run_check_full, CheckOptions,
@@ -19,8 +19,8 @@ use plexuspact_report::{
 };
 
 use crate::cli::{
-    CheckArgs, Cli, Command, DiffArgs, ExportArgs, ExportLang, ExportTarget, Format, InitArgs,
-    PushArgs, RegisterArgs, ValidateArgs,
+    CheckArgs, Cli, Command, DiffArgs, ExportArgs, ExportLang, ExportTarget, Format, ImportArgs,
+    InitArgs, PushArgs, RegisterArgs, ValidateArgs,
 };
 use crate::exit::{CODE_FAILURES, CODE_INTERNAL, CODE_OK, CODE_USAGE};
 use crate::preflight;
@@ -124,6 +124,7 @@ pub fn dispatch(cli: Cli) -> CmdResult {
         Command::Register(args) => cmd_register(args, offline),
         Command::ValidateContract(args) => cmd_validate(args),
         Command::Export(args) => cmd_export(args),
+        Command::Import(args) => cmd_import(args),
     }
 }
 
@@ -779,6 +780,16 @@ fn cmd_export(args: ExportArgs) -> CmdResult {
             };
             databricks_dlt(&contract, lang)
         }
+        ExportTarget::Odcs => {
+            let id = args.id.as_deref().unwrap_or(contract.dataset.as_str());
+            match odcs::export_yaml(&contract, id) {
+                Ok(yaml) => yaml,
+                Err(e) => {
+                    eprintln!("{} {e}", err_glyph());
+                    return Ok(CODE_INTERNAL);
+                }
+            }
+        }
     };
 
     match &args.out {
@@ -789,6 +800,68 @@ fn cmd_export(args: ExportArgs) -> CmdResult {
         None => print!("{rendered}"),
     }
     Ok(CODE_OK)
+}
+
+// ───────────────────────────────── import ───────────────────────────────
+
+/// Converts an ODCS document to a PlexusPact contract. What could not be
+/// mapped is listed on stderr; the draft is linted and still written when
+/// it has errors, because the point is to read and fix it — the exit code
+/// says whether it is usable as it stands.
+fn cmd_import(args: ImportArgs) -> CmdResult {
+    let text = match std::fs::read(&args.path) {
+        Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+        Err(e) => {
+            eprintln!("{} cannot read {}: {e}", err_glyph(), args.path.display());
+            return Ok(CODE_USAGE);
+        }
+    };
+    let (yaml, notes) = match odcs::import_yaml(&text) {
+        Ok(converted) => converted,
+        Err(e) => {
+            eprintln!("{} {}: {e}", err_glyph(), args.path.display());
+            return Ok(CODE_USAGE);
+        }
+    };
+    print_import_notes(&notes);
+
+    let usable = match plexuspact_contract::parse_str(&yaml, &args.path.display().to_string()) {
+        Ok(contract) => {
+            let findings = validate(&contract);
+            for f in &findings {
+                print_lint(f);
+            }
+            !findings.iter().any(|f| f.level == LintLevel::Error)
+        }
+        Err(err) => {
+            eprintln!("{:?}", miette::Report::new(err));
+            false
+        }
+    };
+
+    match &args.out {
+        Some(path) => {
+            std::fs::write(path, &yaml)?;
+            if usable {
+                eprintln!("{} wrote contract to {}", ok_glyph(), path.display());
+            } else {
+                eprintln!(
+                    "{} wrote draft contract to {}; it needs review before use",
+                    warn_glyph(),
+                    path.display()
+                );
+            }
+        }
+        None => std::io::stdout().write_all(yaml.as_bytes())?,
+    }
+    Ok(if usable { CODE_OK } else { CODE_USAGE })
+}
+
+/// Lists what an ODCS import could not carry across, one line each.
+fn print_import_notes(notes: &[String]) {
+    for note in notes {
+        eprintln!("{} {note}", warn_glyph());
+    }
 }
 
 // ────────────────────────────────── init ────────────────────────────────
@@ -855,7 +928,29 @@ fn load_contract(path: &Path) -> LoadedContract {
             return Ok(None);
         }
     };
-    let text = String::from_utf8_lossy(&bytes).into_owned();
+    let mut text = String::from_utf8_lossy(&bytes).into_owned();
+    let mut bytes = bytes;
+    // An ODCS document is accepted wherever a contract is: it is converted on
+    // the way in, the caller sees the converted YAML (so a registry receives
+    // what will actually be checked), and anything dropped is said out loud.
+    if odcs::looks_like_odcs(&text) {
+        match odcs::import_yaml(&text) {
+            Ok((yaml, notes)) => {
+                eprintln!(
+                    "{} {} is an ODCS document; converted it to a PlexusPact contract",
+                    warn_glyph(),
+                    path.display()
+                );
+                print_import_notes(&notes);
+                bytes = yaml.clone().into_bytes();
+                text = yaml;
+            }
+            Err(e) => {
+                eprintln!("{} {}: {e}", err_glyph(), path.display());
+                return Ok(None);
+            }
+        }
+    }
     match plexuspact_contract::parse_str(&text, &path.display().to_string()) {
         Ok(contract) => Ok(Some((contract, bytes))),
         Err(err) => {

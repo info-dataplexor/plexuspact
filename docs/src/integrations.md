@@ -136,6 +136,46 @@ you never generate expectations from a contract that wouldn't itself run. A
 Delta **audit-table sink** (run history for dashboards) is the cloud-side
 complement on the roadmap.
 
+## Open Data Contract Standard (available now)
+
+PlexusPact reads and writes [ODCS](https://bitol-io.github.io/open-data-contract-standard/)
+v3 documents, the Linux Foundation (Bitol) standard that catalogs and
+governance tools exchange. Three doors:
+
+```bash
+# Publish a contract as ODCS 3.1 (for a catalog, a partner, a governance review)
+plexuspact export orders.contract.yaml --target odcs --id urn:acme:orders --out orders.odcs.yaml
+
+# Bring a document somebody else wrote in, keep the draft, review it
+plexuspact import partner.odcs.yaml --out partner.contract.yaml
+
+# Or skip the conversion step: every command takes an ODCS document where it
+# takes a contract, converting on the way in and saying what it dropped
+plexuspact check feed.csv --contract partner.odcs.yaml
+```
+
+What has a native ODCS slot goes there, so a foreign reader sees a rule and not
+a vendor blob:
+
+- Types, `required`, `unique`, `primaryKey` (with position for a composite
+  key), `classification`, and error-severity `min` / `max` / `regex` /
+  `length` / `format` in `logicalTypeOptions`.
+- `references` → a schema `relationships` entry (`type: foreignKey`, ODCS 3.1);
+  `freshness` → the `latency` SLA property; a column's `sunset` → its
+  `endOfLife`; `row_count_min` / `row_count_max` → the standard `rowCount`
+  library metric.
+- Everything else (`enum`, ratios, `assert`, `custom_expr`, and every
+  warn-severity check, since ODCS options carry no severity) rides in
+  spec-sanctioned custom quality entries (`type: custom, engine: plexuspact`),
+  which is what makes export → import lossless for the whole check library.
+
+Import is tolerant: an `object` column, a `sql` quality rule, a `retention`
+promise have no PlexusPact check, so they are dropped with a note on stderr
+rather than failing the conversion. The draft is linted before it is written;
+`import` exits `2` when it still has errors, and `0` when it is usable as it
+stands. Documents from `v3.0.x` through `v3.2` are accepted; export stamps
+`v3.1.0`.
+
 ## CI gate (available now)
 
 The original "block bad data at the source" path needs no new integration:

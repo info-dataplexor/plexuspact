@@ -29,7 +29,7 @@ Bad code is blocked by a failing CI build. Bad data should be blocked the same w
 
 ## Roadmap
 
-**Phase 1.5** adds quarantine mode (route failing rows to a dead-letter file with per-row reasons — routing, never mutation) and AI-assisted authoring (`init --ai`, `explain --ai`), which is strictly opt-in and never in the enforcement path: `check` results are bit-identical with AI features disabled, offline, or unavailable. **Phase 2** adds SQL sources (DataFusion), Python/Node bindings, ODCS import/export, and the hosted registry (drift history, alerting, blast-radius lineage) — the commercial product. The CLI itself is Apache-2.0, free forever.
+**Phase 1.5** adds quarantine mode (route failing rows to a dead-letter file with per-row reasons — routing, never mutation) and AI-assisted authoring (`init --ai`, `explain --ai`), which is strictly opt-in and never in the enforcement path: `check` results are bit-identical with AI features disabled, offline, or unavailable. **Phase 2** adds SQL sources (DataFusion), Python/Node bindings, and the hosted registry (drift history, alerting, blast-radius lineage) — the commercial product. The CLI itself is Apache-2.0, free forever.
 
 ## Where to go next
 

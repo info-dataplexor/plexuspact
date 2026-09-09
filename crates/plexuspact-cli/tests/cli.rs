@@ -301,6 +301,100 @@ fn export_rejects_broken_contract_with_exit_2() {
         .code(2);
 }
 
+const ODCS_DOC: &str = "apiVersion: v3.1.0\n\
+kind: DataContract\n\
+id: orders-contract\n\
+name: orders\n\
+team:\n\
+\x20 - { username: data-owner@example.test, role: owner }\n\
+schema:\n\
+\x20 - name: t\n\
+\x20   properties:\n\
+\x20     - { name: id, logicalType: integer, required: true, primaryKey: true }\n\
+\x20     - { name: name, logicalType: string }\n\
+\x20     - { name: blob, logicalType: object }\n\
+\x20   relationships:\n\
+\x20     - { type: foreignKey, from: [t.id], to: [accounts.id] }\n\
+slaProperties:\n\
+\x20 - { property: retention, value: 3, unit: y }\n";
+
+#[test]
+fn export_odcs_document_from_contract() {
+    let contract = write_temp("contract.yaml", CLEAN_CONTRACT);
+    let out = bin()
+        .args(["export"])
+        .arg(&contract)
+        .args(["--target", "odcs", "--id", "urn:example:t"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let text = String::from_utf8(out).unwrap();
+    assert!(text.contains("apiVersion: v3.1.0"), "{text}");
+    assert!(text.contains("kind: DataContract"), "{text}");
+    assert!(text.contains("id: urn:example:t"), "{text}");
+    assert!(text.contains("logicalType: integer"), "{text}");
+}
+
+#[test]
+fn import_odcs_document_writes_contract_and_notes() {
+    let doc = write_temp("orders.odcs.yaml", ODCS_DOC);
+    let out = tempfile::Builder::new()
+        .suffix("contract.yaml")
+        .tempfile()
+        .unwrap()
+        .into_temp_path();
+    let assert = bin()
+        .args(["import"])
+        .arg(&doc)
+        .arg("--out")
+        .arg(&out)
+        .assert()
+        .success();
+    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
+    // what could not be mapped is said, what could is written
+    assert!(stderr.contains("blob"), "{stderr}");
+    assert!(stderr.contains("retention"), "{stderr}");
+    let written = std::fs::read_to_string(&out).unwrap();
+    assert!(written.contains("dataset: t"), "{written}");
+    assert!(
+        written.contains("owner: data-owner@example.test"),
+        "{written}"
+    );
+    assert!(written.contains("references:"), "{written}");
+    assert!(!written.contains("blob"), "{written}");
+
+    // the written contract is a real one: it lints clean
+    bin()
+        .args(["validate-contract"])
+        .arg(&out)
+        .assert()
+        .success();
+}
+
+#[test]
+fn check_accepts_an_odcs_document_as_the_contract() {
+    let doc = write_temp("orders.odcs.yaml", ODCS_DOC);
+    let data = write_temp("data.csv", "id,name\n1,alice\n2,bob\n");
+    bin()
+        .args(["check"])
+        .arg(&data)
+        .arg("--contract")
+        .arg(&doc)
+        .args(["--reference"])
+        .arg(format!("accounts={}", data.display()))
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("is an ODCS document"));
+}
+
+#[test]
+fn import_rejects_a_document_that_is_not_odcs() {
+    let bad = write_temp("bad.yaml", "just: text\n");
+    bin().args(["import"]).arg(&bad).assert().code(2);
+}
+
 #[test]
 fn openlineage_event_written_with_quality_facets() {
     let contract = write_temp("contract.yaml", CLEAN_CONTRACT);

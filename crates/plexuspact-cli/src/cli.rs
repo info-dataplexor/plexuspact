@@ -44,8 +44,13 @@ pub enum Command {
     Register(RegisterArgs),
     /// Parse and lint a contract without running it.
     ValidateContract(ValidateArgs),
-    /// Export a contract to another tool's format (e.g. Databricks DLT).
+    /// Export a contract to another tool's format (Databricks DLT, ODCS).
     Export(ExportArgs),
+    /// Convert an Open Data Contract Standard (ODCS) document to a contract.
+    ///
+    /// Every other command also accepts an ODCS document wherever it takes a
+    /// contract file; use `import` to keep the converted draft and review it.
+    Import(ImportArgs),
 }
 
 /// `plexuspact init <path>`
@@ -280,6 +285,9 @@ pub struct ExportArgs {
     /// Write to this file instead of stdout.
     #[arg(long, value_name = "FILE")]
     pub out: Option<PathBuf>,
+    /// Stable identity to stamp on an ODCS document (default: the dataset name).
+    #[arg(long, value_name = "ID")]
+    pub id: Option<String>,
 }
 
 /// Supported export targets.
@@ -287,6 +295,18 @@ pub struct ExportArgs {
 pub enum ExportTarget {
     /// Databricks Delta Live Tables expectations.
     DatabricksDlt,
+    /// Open Data Contract Standard v3 document (YAML).
+    Odcs,
+}
+
+/// `plexuspact import <odcs.yaml>`
+#[derive(Debug, clap::Args)]
+pub struct ImportArgs {
+    /// ODCS v3 document (YAML or JSON) to convert.
+    pub path: PathBuf,
+    /// Write the converted contract to this file instead of stdout.
+    #[arg(long, value_name = "FILE")]
+    pub out: Option<PathBuf>,
 }
 
 /// Output language for exports that support several.
