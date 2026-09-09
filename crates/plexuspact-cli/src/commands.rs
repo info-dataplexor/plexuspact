@@ -7,7 +7,8 @@ use std::path::Path;
 use owo_colors::OwoColorize;
 use plexuspact_contract::DatasetCheck;
 use plexuspact_contract::{
-    databricks_dlt, diff, odcs, validate, Change, Contract, DltLang, Impact, LintLevel,
+    databricks_dlt, dbt_schema, diff, odcs, validate, Change, Contract, DbtTarget, DltLang, Impact,
+    LintLevel,
 };
 use plexuspact_core::{
     draft_contract_with_input, key_set_from_path, profile_path_with, run_check_full, CheckOptions,
@@ -779,6 +780,13 @@ fn cmd_export(args: ExportArgs) -> CmdResult {
                 ExportLang::Python => DltLang::Python,
             };
             databricks_dlt(&contract, lang)
+        }
+        ExportTarget::Dbt => {
+            let target = match args.source.as_deref() {
+                Some(src) => DbtTarget::Source(src),
+                None => DbtTarget::Model,
+            };
+            dbt_schema(&contract, target)
         }
         ExportTarget::Odcs => {
             let id = args.id.as_deref().unwrap_or(contract.dataset.as_str());

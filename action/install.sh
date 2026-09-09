@@ -29,8 +29,12 @@ archive="plexuspact-v${VERSION}-${target}.${ext}"
 tool_dir="${RUNNER_TEMP:-/tmp}/plexuspact-${VERSION}"
 mkdir -p "$tool_dir"
 echo "Downloading ${BASE_URL}/${archive}"
-curl -fsSL --retry 3 -o "${tool_dir}/${archive}" "${BASE_URL}/${archive}"
-curl -fsSL --retry 3 -o "${tool_dir}/SHA256SUMS" "${BASE_URL}/SHA256SUMS"
+for file in "$archive" SHA256SUMS; do
+  if ! curl -fsSL --retry 3 -o "${tool_dir}/${file}" "${BASE_URL}/${file}"; then
+    echo "::error::could not download ${BASE_URL}/${file} - is v${VERSION} a published release of ${REPO}?"
+    exit 3
+  fi
+done
 
 if command -v sha256sum >/dev/null 2>&1; then sum_cmd="sha256sum"; else sum_cmd="shasum -a 256"; fi
 expected="$(grep " ${archive}\$" "${tool_dir}/SHA256SUMS" | awk '{print $1}')"

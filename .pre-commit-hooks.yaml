@@ -1,0 +1,25 @@
+# Hooks for https://pre-commit.com — add to a project's .pre-commit-config.yaml:
+#
+#   repos:
+#     - repo: https://github.com/info-dataplexor/plexuspact
+#       rev: v0.1.0
+#       hooks:
+#         - id: plexuspact-validate-contract
+#         - id: plexuspact-diff
+#
+# Both hooks look only at files that are PlexusPact contracts or ODCS
+# documents, so they are safe over every YAML file in a repository. They fetch
+# the release binary that matches `rev` once (checksum-verified, cached under
+# ~/.cache/plexuspact); set PLEXUSPACT_BIN to use a binary you already have.
+- id: plexuspact-validate-contract
+  name: plexuspact validate-contract
+  description: Parse and lint every staged PlexusPact contract or ODCS document; other YAML is skipped.
+  entry: hooks/validate-contract.sh
+  language: script
+  types: [yaml]
+- id: plexuspact-diff
+  name: plexuspact diff (breaking changes against HEAD)
+  description: Fail the commit when a staged contract change would break its consumers, compared with the version in HEAD.
+  entry: hooks/diff.sh
+  language: script
+  types: [yaml]

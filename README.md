@@ -162,7 +162,7 @@ The official GitHub Action downloads a pinned, checksum-verified binary, runs th
     strict: "true"
 ```
 
-Recipes for GitLab CI, pre-commit, Airflow, and cron are in [docs/src/ci-recipes.md](docs/src/ci-recipes.md).
+Recipes for GitLab CI, Airflow, and cron are in [docs/src/ci-recipes.md](docs/src/ci-recipes.md); the repository also ships [pre-commit hooks](.pre-commit-hooks.yaml) that lint staged contracts and refuse breaking changes.
 
 ## Commands
 
@@ -201,7 +201,7 @@ Build the book locally with [mdBook](https://rust-lang.github.io/mdBook/): `mdbo
 
 **Next (Phase 1.5 / v0.4):** quarantine mode (`--quarantine bad_rows/` routes failing rows losslessly with per-row reasons — routing, never mutation) and AI-assisted authoring (`init --ai`, `explain --ai`; strictly opt-in, bring your own key or local model, and never in the enforcement path — `check` results are bit-identical with AI disabled).
 
-**Later (Phase 2):** SQL sources via DataFusion, Python/Node bindings, and the hosted registry below. ODCS 3.1 import/export is already in (`plexuspact export --target odcs`, `plexuspact import`).
+**Later (Phase 2):** SQL sources via DataFusion, Python/Node bindings, and the hosted registry below. ODCS 3.1 import/export is already in (`plexuspact export --target odcs`, `plexuspact import`), as is dbt (`plexuspact export --target dbt` plus the [dbt test package](integrations/dbt)) and Databricks DLT (`--target databricks-dlt`).
 
 ## Open core, honestly
 

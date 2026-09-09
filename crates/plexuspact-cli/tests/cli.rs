@@ -319,6 +319,52 @@ slaProperties:\n\
 \x20 - { property: retention, value: 3, unit: y }\n";
 
 #[test]
+fn export_dbt_schema_as_source_and_model() {
+    let contract = write_temp(
+        "contract.yaml",
+        "apiVersion: v1\n\
+dataset: t\n\
+columns:\n\
+\x20 id: { type: int, required: true, checks: [unique, { min: 1 }] }\n\
+\x20 name: { type: string, checks: [{ enum: [a, b], severity: warn }] }\n\
+\x20 at: { type: datetime }\n\
+dataset_checks:\n\
+\x20 - { freshness: { column: at, max_age: 6h } }\n",
+    );
+    let out = bin()
+        .args(["export"])
+        .arg(&contract)
+        .args(["--target", "dbt", "--source", "raw"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let text = String::from_utf8(out).unwrap();
+    assert!(text.contains("sources:"), "{text}");
+    assert!(text.contains("name: raw"), "{text}");
+    assert!(text.contains("loaded_at_field: at"), "{text}");
+    assert!(text.contains("period: hour"), "{text}");
+    assert!(text.contains("- not_null"), "{text}");
+    assert!(text.contains("plexuspact.min:"), "{text}");
+    assert!(text.contains("severity: warn"), "{text}");
+
+    let out = bin()
+        .args(["export"])
+        .arg(&contract)
+        .args(["--target", "dbt"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let text = String::from_utf8(out).unwrap();
+    assert!(text.contains("models:"), "{text}");
+    assert!(text.contains("plexuspact.freshness:"), "{text}");
+    assert!(!text.contains("loaded_at_field"), "{text}");
+}
+
+#[test]
 fn export_odcs_document_from_contract() {
     let contract = write_temp("contract.yaml", CLEAN_CONTRACT);
     let out = bin()

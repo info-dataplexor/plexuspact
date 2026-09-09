@@ -43,7 +43,7 @@ rules — it belongs to the control plane.
 | Exit codes + JUnit XML + GitHub Action | **OSS** | Offline, deterministic; the CI gate is the core promise |
 | **Reporting a run to a cloud project** | **OSS** | One token from the environment, one address, nothing stored; opt-in and suppressible with `--offline` |
 | **OpenLineage event emission** | **OSS** | Pure `RunResult → JSON` transform, no secrets |
-| dbt source/test generation | **OSS** | Pure `contract → YAML` transform |
+| **dbt `schema.yml` generation + test package** | **OSS** | Pure `contract → YAML` transform; the tests are dbt macros |
 | **Databricks DLT expectation generation** | **OSS** | Pure `contract → SQL/Python` transform |
 | Delivering events to a collector URL | **Cloud** | Holds endpoint + token, needs retry/backoff |
 | Slack / Teams / PagerDuty notifications | **Cloud** | Stores webhook secrets, per-workspace routing |
@@ -94,12 +94,52 @@ time, so re-emitting the same run is idempotent.
      the dataset in Unity Catalog lineage.
   2. **Checks inside the pipeline** — generate Delta Live Tables expectations
      from the contract so the *same* rules run natively in DLT (see below).
-- **dbt** — run PlexusPact as a pre-`dbt run` gate in CI (below) so a broken
-  contract fails the build before models compute; feed the OpenLineage event into
-  the same collector `dbt-ol` reports to for a unified lineage view. (A **dbt
-  source/test generator** — `contract → schema.yml` with tests — is on the
-  roadmap.)
+- **dbt** — generate the model's (or source's) `schema.yml` from the contract so
+  the *same* checks run as dbt tests (see below); run PlexusPact as a
+  pre-`dbt run` gate in CI so a broken partner feed fails before models
+  compute; feed the OpenLineage event into the same collector `dbt-ol` reports
+  to for a unified lineage view.
 - **Airflow / Marquez / DataHub** — consume the OpenLineage event directly.
+
+## dbt (available now)
+
+Generate a dbt `schema.yml` from a contract, so the rules PlexusPact enforces at
+the door also run as `dbt test` on the model — one source of truth, no
+double-authoring:
+
+```bash
+# the dataset as a model
+plexuspact export orders.contract.yaml --target dbt --out models/orders.yml
+
+# the dataset as a table of a source, with native `dbt source freshness`
+plexuspact export orders.contract.yaml --target dbt --source raw --out models/staging/raw.yml
+```
+
+Where dbt has a native test it is used — `required` → `not_null`, `unique` →
+`unique`, `enum` → `accepted_values`, single-column `references` →
+`relationships`, `freshness` on a source → `loaded_at_field` + `freshness:`.
+Every other check (`min`, `max`, `regex`, `format`, `length`,
+`not_empty_string`, `null_ratio_max`, `unique_ratio_min`, `row_count_min/max`,
+`assert`, model-level `freshness`) is a `plexuspact.*` generic test from the
+[PlexusPact dbt package](https://github.com/info-dataplexor/plexuspact/tree/main/integrations/dbt),
+whose semantics match `plexuspact check` (value checks ignore nulls; nullability
+is `required`, never a side effect). Add it once:
+
+```yaml
+# packages.yml
+packages:
+  - git: "https://github.com/info-dataplexor/plexuspact.git"
+    subdirectory: integrations/dbt
+    revision: v0.1.0
+```
+
+Warn-severity checks become `severity: warn`; PII, classification, stability and
+sunset land in column `meta`, owner and contract version in the table's. What
+cannot be a dbt test — composite `references`, `custom_expr` — is listed in a
+trailing comment so nothing is dropped silently. Regular expressions dispatch
+per adapter (Postgres, Redshift, Snowflake, BigQuery, Databricks/Spark, DuckDB).
+The generated file uses `data_tests` with inputs under `arguments`, the shape
+dbt has used since 1.10; on 1.8/1.9 unnest `arguments`.
 
 ## Databricks Delta Live Tables (available now)
 
@@ -195,8 +235,9 @@ Prioritized, each building on the `RunResult` projection principle:
 1. **ChatOps notifications (cloud)** — Slack / Teams / PagerDuty channels
    configured per workspace, firing on failed runs with owner routing. The most
    direct answer to "quality communication" for humans.
-2. **dbt adapter (OSS + cloud)** — generate `schema.yml` sources/tests from a
-   contract; optionally publish results into the dbt artifacts a run consumes.
+2. **dbt results into the cloud** — publish a dbt job's `run_results.json` as a
+   run against the registered contract, so a test that fails inside dbt shows on
+   the same trust page as a delivery that failed at the door.
 3. **Databricks Delta audit sink (cloud)** — the cloud complement to the DLT
    generator above: write every run's summary to a Delta table for history.
 4. **Generic outbound webhook (cloud)** — POST the `RunResult` (or a compact

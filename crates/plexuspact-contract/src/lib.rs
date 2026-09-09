@@ -21,6 +21,7 @@
 //!   breaking / non-breaking / cosmetic.
 //! * [`schema`] — JSON Schema generation for editor autocomplete.
 
+pub mod dbt;
 pub mod diff;
 pub mod export;
 pub mod model;
@@ -30,6 +31,7 @@ pub mod schema;
 mod suggest;
 pub mod validate;
 
+pub use dbt::{dbt_schema, DbtTarget};
 pub use diff::{diff, Change, Impact};
 pub use export::{databricks_dlt, DltLang};
 pub use model::{

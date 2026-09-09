@@ -182,7 +182,31 @@ the repository.
 
 ## pre-commit hook
 
-Validate the contract file itself (and small committed fixtures) before every commit:
+The repository ships hooks for [pre-commit](https://pre-commit.com). Both look
+only at files that are PlexusPact contracts or ODCS documents, so `types: [yaml]`
+is safe across a whole repository; they fetch the checksum-verified release that
+matches `rev` once and cache it under `~/.cache/plexuspact`.
+
+```yaml
+# .pre-commit-config.yaml
+repos:
+  - repo: https://github.com/info-dataplexor/plexuspact
+    rev: v0.1.0
+    hooks:
+      - id: plexuspact-validate-contract   # parse + lint every staged contract
+      - id: plexuspact-diff                # refuse a change that breaks consumers (vs HEAD)
+```
+
+`plexuspact-diff` compares each staged contract with the version in `HEAD` and
+fails on a breaking change — a column or check removed, a type changed, a
+column made required, the key changed — before it reaches a pull request. A
+contract that is new in the commit has nothing to break and is skipped. Set
+`PLEXUSPACT_BIN=/path/to/plexuspact` to use a binary you already have (a local
+build, an air-gapped mirror); nothing is downloaded then. The hooks are POSIX
+shell, so on Windows run pre-commit where Git Bash's `sh` is on `PATH`.
+
+If you would rather run a binary on `PATH` and add a fixture check, a local
+hook works too — keep hook inputs small, full-dataset checks belong in CI:
 
 ```yaml
 # .pre-commit-config.yaml
@@ -201,8 +225,6 @@ repos:
         pass_filenames: false
         files: ^(contracts/|fixtures/)
 ```
-
-Full-dataset checks belong in CI, not pre-commit — keep hook inputs small.
 
 ## Airflow
 

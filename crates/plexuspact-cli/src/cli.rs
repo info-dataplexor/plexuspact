@@ -44,7 +44,7 @@ pub enum Command {
     Register(RegisterArgs),
     /// Parse and lint a contract without running it.
     ValidateContract(ValidateArgs),
-    /// Export a contract to another tool's format (Databricks DLT, ODCS).
+    /// Export a contract to another tool's format (Databricks DLT, dbt, ODCS).
     Export(ExportArgs),
     /// Convert an Open Data Contract Standard (ODCS) document to a contract.
     ///
@@ -288,6 +288,10 @@ pub struct ExportArgs {
     /// Stable identity to stamp on an ODCS document (default: the dataset name).
     #[arg(long, value_name = "ID")]
     pub id: Option<String>,
+    /// dbt only: emit the dataset as a table of this `sources:` entry, with
+    /// native source freshness. Without it the dataset is a `models:` entry.
+    #[arg(long, value_name = "NAME")]
+    pub source: Option<String>,
 }
 
 /// Supported export targets.
@@ -295,6 +299,8 @@ pub struct ExportArgs {
 pub enum ExportTarget {
     /// Databricks Delta Live Tables expectations.
     DatabricksDlt,
+    /// dbt `schema.yml` with the contract's checks as tests.
+    Dbt,
     /// Open Data Contract Standard v3 document (YAML).
     Odcs,
 }
