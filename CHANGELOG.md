@@ -9,6 +9,10 @@ and get a `MIGRATION.md` entry.
 
 ## [Unreleased]
 
+### Changed
+
+- Minimum supported Rust is 1.88 (was 1.80): the workbook reader needs a calamine that has moved to quick-xml 0.41, which closes RUSTSEC-2026-0194 and RUSTSEC-2026-0195 for attacker-supplied XML.
+
 ### Added
 
 - Excel and OpenDocument workbooks (`.xlsx`, `.xlsm`, `.xlsb`, `.xls`, `.ods`), XML and fixed-width text as inputs to `check` and `init`, next to CSV/TSV, Parquet, NDJSON and JSON. Workbook cells are read as the text a CSV export would show (dates, timestamps, booleans, whole numbers); XML attributes and children become columns, nested ones dotted (`amount.currency`); fixed-width columns are character spans, so accents do not shift them.

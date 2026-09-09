@@ -249,10 +249,10 @@ impl ColumnAcc {
         let len = s.chars().count() as u64;
         self.min_len = Some(self.min_len.map_or(len, |m| m.min(len)));
         self.max_len = Some(self.max_len.map_or(len, |m| m.max(len)));
-        if self.str_min.as_deref().map_or(true, |cur| s < cur) {
+        if self.str_min.as_deref().is_none_or(|cur| s < cur) {
             self.str_min = Some(s.to_owned());
         }
-        if self.str_max.as_deref().map_or(true, |cur| s > cur) {
+        if self.str_max.as_deref().is_none_or(|cur| s > cur) {
             self.str_max = Some(s.to_owned());
         }
     }

@@ -37,7 +37,7 @@ scoop install plexuspact
 
 ## Cargo (build from source)
 
-Requires a recent stable Rust toolchain (MSRV 1.80):
+Requires a recent stable Rust toolchain (MSRV 1.88):
 
 ```sh
 cargo install --git https://github.com/info-dataplexor/plexuspact plexuspact-cli

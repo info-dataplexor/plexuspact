@@ -218,7 +218,7 @@ fn sanitize_name(raw: &str) -> String {
             }
         })
         .collect();
-    if s.chars().next().map_or(true, |c| c.is_ascii_digit()) {
+    if s.chars().next().is_none_or(|c| c.is_ascii_digit()) {
         s.insert(0, 'c');
     }
     s

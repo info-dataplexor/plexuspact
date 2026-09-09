@@ -336,11 +336,11 @@ fn humanize_secs(secs: i64) -> String {
     let s = secs as u64;
     // Prefer hours for durations up to 3 days (so `48h` stays `48h`, matching
     // how contracts are typically written), days beyond that.
-    if s % 3_600 == 0 && s / 3_600 <= 72 {
+    if s.is_multiple_of(3_600) && s / 3_600 <= 72 {
         format!("{}h", s / 3_600)
-    } else if s % 86_400 == 0 {
+    } else if s.is_multiple_of(86_400) {
         format!("{}d", s / 86_400)
-    } else if s % 3_600 == 0 {
+    } else if s.is_multiple_of(3_600) {
         format!("{}h", s / 3_600)
     } else {
         humantime::format_duration(std::time::Duration::from_secs(s)).to_string()

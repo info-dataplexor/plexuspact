@@ -37,7 +37,7 @@ where
     let mut best: Option<(usize, &'a str)> = None;
     for candidate in candidates {
         let d = levenshtein(&input_lower, &candidate.to_ascii_lowercase());
-        if best.map_or(true, |(bd, _)| d < bd) {
+        if best.is_none_or(|(bd, _)| d < bd) {
             best = Some((d, candidate));
         }
     }

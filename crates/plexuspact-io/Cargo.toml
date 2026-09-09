@@ -17,8 +17,9 @@ flate2 = { workspace = true }
 zstd = { workspace = true }
 tempfile = { workspace = true }
 chrono = { workspace = true }
-# 0.30 is the last calamine that builds on our MSRV (1.80); 0.36 wants 1.88.
-calamine = { version = "0.30", features = ["dates"] }
+# 0.36 is the first calamine on quick-xml 0.41 (RUSTSEC-2026-0194/0195 are
+# fixed there); it sets the workspace MSRV at 1.88.
+calamine = { version = "0.36", features = ["dates"] }
 quick-xml = "0.41"
 
 [dev-dependencies]
