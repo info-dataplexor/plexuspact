@@ -31,6 +31,9 @@ confidence-threshold = 0.9
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
+# The workspace crates reference each other by path (plus an explicit version so
+# cargo-deny can resolve them); a bare path is not a wildcard we want to ban.
+allow-wildcard-paths = true
 
 [sources]
 unknown-registry = "deny"

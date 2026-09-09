@@ -61,7 +61,7 @@ pub struct ColumnProfile {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub format: Option<String>,
     /// The distinct values themselves, when the column held few enough of them
-    /// to be worth keeping (see [`KEEP_VALUES_CAP`]). Empty otherwise — an
+    /// to be worth keeping (see `KEEP_VALUES_CAP`). Empty otherwise — an
     /// empty list means "not collected", never "no values".
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub values: Vec<String>,

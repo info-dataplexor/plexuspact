@@ -21,11 +21,11 @@ authors = ["PlexusPact contributors"]
 
 [workspace.dependencies]
 # Internal crates
-plexuspact-contract = { path = "crates/plexuspact-contract" }
-plexuspact-io = { path = "crates/plexuspact-io" }
-plexuspact-engine = { path = "crates/plexuspact-engine" }
-plexuspact-core = { path = "crates/plexuspact-core" }
-plexuspact-report = { path = "crates/plexuspact-report" }
+plexuspact-contract = { path = "crates/plexuspact-contract", version = "0.1.0" }
+plexuspact-io = { path = "crates/plexuspact-io", version = "0.1.0" }
+plexuspact-engine = { path = "crates/plexuspact-engine", version = "0.1.0" }
+plexuspact-core = { path = "crates/plexuspact-core", version = "0.1.0" }
+plexuspact-report = { path = "crates/plexuspact-report", version = "0.1.0" }
 
 # DataFrame engine (only plexuspact-io and plexuspact-engine may depend on this)
 polars = { version = "0.46", default-features = false, features = [

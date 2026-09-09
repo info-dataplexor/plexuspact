@@ -327,7 +327,10 @@ fn rejected(status: u16, body: &str) -> PushError {
         // 403 is a live key that is not allowed to do this — the scope it was
         // minted with does not cover this call. The detail names the scope.
         403 => PushError::with_hint(
-            format!("the API key is not allowed to do this: {}", describe("missing scope")),
+            format!(
+                "the API key is not allowed to do this: {}",
+                describe("missing scope")
+            ),
             "mint a key with the right scope under Settings → API keys and update it in CI"
                 .to_owned(),
         ),
