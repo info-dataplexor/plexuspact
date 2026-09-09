@@ -12,5 +12,5 @@ plexuspact::contract::parse
    ·                 ╰── unrecognized value
    ╰────
   help: valid values here are: string, int, float, bool, date, datetime
-        or upgrade the CLI (this one is 0.1.0) if this contract targets a
+        or upgrade the CLI (this one is X.Y.Z) if this contract targets a
         newer schema

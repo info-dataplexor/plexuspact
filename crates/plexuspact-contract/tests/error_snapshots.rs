@@ -17,7 +17,10 @@ fn render(src: &str) -> String {
         .with_width(80)
         .render_report(&mut out, &err)
         .unwrap();
-    out
+    // The upgrade hints quote this crate's version; pin it so a release does
+    // not rewrite every snapshot. Same width as a one-digit-per-part version,
+    // so the 80-column wrapping above stays put.
+    out.replace(env!("CARGO_PKG_VERSION"), "X.Y.Z")
 }
 
 #[test]

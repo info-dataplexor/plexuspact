@@ -14,5 +14,5 @@ plexuspact::contract::parse
    ╰────
   help: valid keys here are: name, contact, kind, tier, reads
         or, if this contract was written for a newer PlexusPact, upgrade the
-        CLI (this one is 0.1.0) — deleting a key this binary does not know can
+        CLI (this one is X.Y.Z) — deleting a key this binary does not know can
         drop a real declaration

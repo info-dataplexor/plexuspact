@@ -11,5 +11,5 @@ plexuspact::contract::parse
    ·              ╰── unsupported version
  2 │ dataset: t
    ╰────
-  help: set `apiVersion: v1` — or upgrade the CLI (this one is 0.1.0) if this
+  help: set `apiVersion: v1` — or upgrade the CLI (this one is X.Y.Z) if this
         contract targets a newer schema

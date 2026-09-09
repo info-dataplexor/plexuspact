@@ -100,6 +100,11 @@ time, so re-emitting the same run is idempotent.
   compute; feed the OpenLineage event into the same collector `dbt-ol` reports
   to for a unified lineage view.
 - **Airflow / Marquez / DataHub** — consume the OpenLineage event directly.
+- **PlexusPact Cloud** — an `openlineage` notification channel emits every run
+  the service records (CLI pushes, scheduled checks, URL/SFTP/API sources) as
+  this same event, with the hosted run's id as `runId` and a `plexuspact_cloud`
+  run facet linking back to the run page, so nothing has to be wired per
+  pipeline.
 
 ## dbt (available now)
 
