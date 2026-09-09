@@ -59,6 +59,17 @@ pub fn render_openlineage(
     result: &RunResult,
     opts: &OpenLineageOptions,
 ) -> Result<String, RenderError> {
+    Ok(serde_json::to_string_pretty(&openlineage_event(
+        result, opts,
+    ))?)
+}
+
+/// Builds the OpenLineage `RunEvent` for `result` as a JSON value — the same
+/// document [`render_openlineage`] writes, before serialization, so a host
+/// that forwards runs to a lineage collector can add facets of its own (a
+/// link back to the run it recorded, say) without re-deriving the mapping.
+#[must_use]
+pub fn openlineage_event(result: &RunResult, opts: &OpenLineageOptions) -> Value {
     let producer = format!("{REPO}/tree/v{}", result.tool_version);
     let dataset = &result.contract.dataset;
     let job_name = opts
@@ -92,7 +103,7 @@ pub fn render_openlineage(
         },
     });
 
-    let event = json!({
+    json!({
         "eventType": event_type,
         "eventTime": event_time,
         "producer": producer,
@@ -110,9 +121,7 @@ pub fn render_openlineage(
         },
         "inputs": [input],
         "outputs": [],
-    });
-
-    Ok(serde_json::to_string_pretty(&event)?)
+    })
 }
 
 /// The `dataQualityAssertions` dataset facet: one assertion per check.

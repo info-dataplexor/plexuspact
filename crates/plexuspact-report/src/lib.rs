@@ -35,7 +35,7 @@ pub use html::render_html;
 pub use human::{render_human, HumanOptions};
 pub use json::{render_json, render_json_redacted};
 pub use junit::render_junit;
-pub use openlineage::{render_openlineage, OpenLineageOptions};
+pub use openlineage::{openlineage_event, render_openlineage, OpenLineageOptions};
 
 // Re-exported so downstream callers can construct/consume results without
 // naming plexuspact-core directly.
