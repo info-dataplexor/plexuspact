@@ -3,8 +3,8 @@
 use chrono::{DateTime, Utc};
 use plexuspact_contract::{Consumer, Contract, InputSettings, Severity};
 use plexuspact_engine::{
-    collect_key_set, execute, profile, CheckOutcome, DatasetProfile, KeySet, ReferenceSets,
-    RunOptions,
+    collect_key_set, execute, profile, CheckOutcome, DatasetProfile, EngineOutput, KeySet,
+    ReferenceSets, RunOptions,
 };
 use plexuspact_io::{
     delimiter_byte, detect, open, resolve, FixedWidthOptions, InputFormat, IoError, ReadOptions,
@@ -378,7 +378,50 @@ pub fn run_with_artifacts(
     };
     let engine_out = execute(source.as_mut(), &req.contract, &opts)?;
 
-    let duration_ms = (Utc::now() - started_at).num_milliseconds().max(0) as u64;
+    let assembled = Assembly {
+        contract: &req.contract,
+        contract_bytes: &req.contract_bytes,
+        contract_path: req.contract_path,
+        source: SourceInfo {
+            path: req.source_display,
+            format: format.to_owned(),
+            rows: engine_out.rows_total,
+            columns: engine_out.source_columns,
+            bytes: size_bytes,
+        },
+        started_at,
+        redact_samples: req.redact_samples,
+        tool_version,
+    };
+    Ok(assemble(engine_out, assembled))
+}
+
+/// Everything besides the engine's output that a [`RunResult`] is made of.
+#[derive(Debug, Clone)]
+pub struct Assembly<'a> {
+    /// The contract the checks came from.
+    pub contract: &'a Contract,
+    /// The contract's bytes, for the content hash the result records.
+    pub contract_bytes: &'a [u8],
+    /// Where the contract was read from, if anywhere.
+    pub contract_path: Option<String>,
+    /// What was checked — the row and column counts are the engine's, the
+    /// rest is the caller's.
+    pub source: SourceInfo,
+    /// When the run began; the duration is measured from here.
+    pub started_at: DateTime<Utc>,
+    /// Replace failure samples and profile values with a marker.
+    pub redact_samples: bool,
+    /// The tool that produced the result, as the result records it.
+    pub tool_version: &'a str,
+}
+
+/// Turns an engine's output into a [`RunResult`] — the same mapping
+/// [`run_with_artifacts`] applies, for callers that evaluated the contract
+/// elsewhere (a warehouse running the checks as SQL, say) and want a result
+/// other results can be compared with.
+pub fn assemble(engine_out: EngineOutput, parts: Assembly<'_>) -> (RunResult, RunArtifacts) {
+    let duration_ms = (Utc::now() - parts.started_at).num_milliseconds().max(0) as u64;
 
     let observed_schema = Some(ObservedSchema {
         typed: engine_out.observed_typed,
@@ -395,15 +438,15 @@ pub fn run_with_artifacts(
     let profile = engine_out.profile.map(|columns| RunProfile {
         columns: columns
             .into_iter()
-            .map(|c| map_stats(c, req.redact_samples))
+            .map(|c| map_stats(c, parts.redact_samples))
             .collect(),
-        redacted: req.redact_samples,
+        redacted: parts.redact_samples,
     });
 
     let checks: Vec<CheckResult> = engine_out
         .checks
         .into_iter()
-        .map(|c| map_check(c, req.redact_samples))
+        .map(|c| map_check(c, parts.redact_samples))
         .collect();
 
     let summary = summarize(&checks);
@@ -413,29 +456,23 @@ pub fn run_with_artifacts(
         RunStatus::Passed
     };
 
-    let content_sha256 = sha256_hex(&req.contract_bytes);
+    let content_sha256 = sha256_hex(parts.contract_bytes);
     let artifacts = RunArtifacts {
         primary_key: engine_out.primary_key,
     };
 
     let result = RunResult {
         result_schema_version: RESULT_SCHEMA_VERSION,
-        tool_version: tool_version.to_owned(),
+        tool_version: parts.tool_version.to_owned(),
         contract: ContractRef {
-            dataset: req.contract.dataset.clone(),
-            path: req.contract_path,
+            dataset: parts.contract.dataset.clone(),
+            path: parts.contract_path,
             content_sha256,
-            owner: req.contract.owner.clone(),
-            consumers: req.contract.consumers.iter().map(map_consumer).collect(),
+            owner: parts.contract.owner.clone(),
+            consumers: parts.contract.consumers.iter().map(map_consumer).collect(),
         },
-        source: SourceInfo {
-            path: req.source_display,
-            format: format.to_owned(),
-            rows: engine_out.rows_total,
-            columns: engine_out.source_columns,
-            bytes: size_bytes,
-        },
-        started_at,
+        source: parts.source,
+        started_at: parts.started_at,
         duration_ms,
         status,
         summary,
@@ -443,7 +480,7 @@ pub fn run_with_artifacts(
         observed_schema,
         profile,
     };
-    Ok((result, artifacts))
+    (result, artifacts)
 }
 
 /// Maps one column's run-time statistics into the wire format.

@@ -16,13 +16,14 @@ pub use draft::{draft_contract, draft_contract_with_input};
 pub use error::CoreError;
 pub use plexuspact_contract::InputSettings;
 pub use plexuspact_engine::{profile, ColumnProfile, DatasetProfile, KeySet, ReferenceSets};
+pub use plexuspact_engine::{pushdown, EngineOutput};
 pub use result::{
     CheckMetrics, CheckResult, CheckSeverity, CheckStatus, ColumnStats, ConsumerRef, ContractRef,
     FailureSample, ObservedColumnInfo, ObservedSchema, RunProfile, RunResult, RunStatus,
     RunSummary, SourceInfo, RESULT_SCHEMA_VERSION,
 };
 pub use run::{
-    key_set_from_path, profile_path, profile_path_with, read_options_for, run, run_check,
-    run_check_full, run_check_with, run_with_artifacts, CheckOptions, InputOverrides, RunArtifacts,
-    RunRequest,
+    assemble, key_set_from_path, profile_path, profile_path_with, read_options_for, run, run_check,
+    run_check_full, run_check_with, run_with_artifacts, Assembly, CheckOptions, InputOverrides,
+    RunArtifacts, RunRequest,
 };

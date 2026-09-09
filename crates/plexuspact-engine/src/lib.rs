@@ -29,6 +29,7 @@ mod exec;
 mod hll;
 pub mod keys;
 mod plan;
+pub mod pushdown;
 
 pub use profile::{profile, ColumnProfile, ColumnStats, DatasetProfile};
 

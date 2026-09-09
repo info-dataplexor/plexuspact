@@ -392,7 +392,7 @@ fn length_json(spec: plexuspact_contract::LengthSpec) -> serde_json::Value {
 
 /// Compact human duration for report display: whole hours (`48h`), whole days
 /// (`7d`), else falls back to `humantime`.
-fn humanize_secs(secs: i64) -> String {
+pub(crate) fn humanize_secs(secs: i64) -> String {
     if secs <= 0 {
         return "0s".to_owned();
     }
