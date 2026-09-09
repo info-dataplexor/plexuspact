@@ -16,7 +16,7 @@
 //! * [`model`] — the typed contract ([`Contract`], [`ColumnCheck`], …) with
 //!   dual-form serde (`unique` bare strings and `{ min: 18 }` maps).
 //! * [`parse`] — [`parse_str`]/[`parse_file`] with miette span diagnostics.
-//! * [`validate`] — semantic lint after parse; returns **all** findings.
+//! * [`validate`](mod@validate) — semantic lint after parse; returns **all** findings.
 //! * [`diff`](mod@diff) — semantic diff classifying changes as
 //!   breaking / non-breaking / cosmetic.
 //! * [`schema`] — JSON Schema generation for editor autocomplete.

@@ -1327,7 +1327,7 @@ pub struct Consumer {
     /// where everything ends up in the top two.
     ///
     /// Absent means it has not been ranked, which is not the same as tier 3.
-    /// [`crate::validate`] proves the range; nothing here decides what a tier
+    /// [`crate::validate`](fn@crate::validate) proves the range; nothing here decides what a tier
     /// is worth, because that is a decision each organisation makes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(range(min = 1, max = 3))]
@@ -1341,7 +1341,7 @@ pub struct Consumer {
     /// the columns and the answer gets sharper — a change to `region` stops
     /// paging the team that only reads `amount`.
     ///
-    /// Every name must be a column the contract declares; [`crate::validate`]
+    /// Every name must be a column the contract declares; [`crate::validate`](fn@crate::validate)
     /// rejects the rest, because a typo here is a dependency that silently
     /// matches nothing, which is worse than no declaration at all.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -1402,7 +1402,7 @@ pub struct ColumnDef {
     ///
     /// Held as a string rather than a date type on purpose: this crate parses
     /// contracts on machines that may have no clock worth trusting, and it has
-    /// no business deciding what "today" is. [`crate::validate`] proves the
+    /// no business deciding what "today" is. [`crate::validate`](fn@crate::validate) proves the
     /// shape and the calendar; ISO-8601 sorts lexicographically, which is all
     /// the diff needs to tell a date that moved closer from one that moved
     /// away. Anything that acts on the date — refusing a change, chasing the
