@@ -17,9 +17,9 @@ pub use error::CoreError;
 pub use plexuspact_contract::InputSettings;
 pub use plexuspact_engine::{profile, ColumnProfile, DatasetProfile, KeySet, ReferenceSets};
 pub use result::{
-    CheckMetrics, CheckResult, CheckSeverity, CheckStatus, ConsumerRef, ContractRef, FailureSample,
-    ObservedColumnInfo, ObservedSchema, RunResult, RunStatus, RunSummary, SourceInfo,
-    RESULT_SCHEMA_VERSION,
+    CheckMetrics, CheckResult, CheckSeverity, CheckStatus, ColumnStats, ConsumerRef, ContractRef,
+    FailureSample, ObservedColumnInfo, ObservedSchema, RunProfile, RunResult, RunStatus,
+    RunSummary, SourceInfo, RESULT_SCHEMA_VERSION,
 };
 pub use run::{
     key_set_from_path, profile_path, profile_path_with, read_options_for, run, run_check,

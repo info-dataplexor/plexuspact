@@ -58,6 +58,8 @@ The document carries `result_schema_version`. Within version `1`, changes are **
 | `status` | string | `passed` \| `failed` — `failed` iff any **error**-severity check failed. This field is independent of `--strict`: `--strict` only affects the process **exit code** (warn-only failures still exit non-zero under `--strict`), never the recorded `status`. |
 | `summary` | object | `checks_total`, `passed`, `failed_error`, `failed_warn`. |
 | `checks` | array | One entry per planned check, **passing checks included**. |
+| `observed_schema` | object | The shape the source actually had: `typed` and `columns[] { name, dtype }` in source order. Absent from older results. |
+| `profile` | object | What every column looked like — see below. Absent under `--no-profile` and from older results. |
 
 ### `contract`
 
@@ -87,6 +89,23 @@ The document carries `result_schema_version`. Within version `1`, changes are **
 | `status` | `passed` \| `failed`. |
 | `metrics` | Row-level checks report `rows_evaluated`, `rows_failed`, and `fail_ratio`; these are **omitted** for pure dataset-level checks (e.g. `row_count_min`, `freshness`) where a per-row count is meaningless, so consumers must treat them as optional (`jq` returns `null`). Checks also report observed statistics (e.g. `min_observed`, `null_ratio`, `distinct_count`) **even when passing** — this is what makes time-series drift charts possible from stored results. |
 | `samples` | Up to `--sample-failures` (default 5) `{ row, value }` pairs. `row` is the absolute row number in the source. Sample values are real data — use `--redact-samples` to mask them before sharing. |
+
+### `profile`
+
+Recorded on every run unless `--no-profile` is given. The checks say whether the data kept the contract's promises; this says what the data *was*, so the next run can be held against it. A feed whose every check passes can still halve its row count, double its nulls, or grow a new category overnight, and the only way to see that is to have written down what yesterday looked like. PlexusPact Cloud compares consecutive runs' profiles and raises those as drift.
+
+| Field | Description |
+|---|---|
+| `columns[]` | One entry per **source** column, declared or not, in source order. |
+| `columns[].name` | Column name as the source spells it. |
+| `columns[].null_count`, `null_ratio` | Nulls and empty strings; the ratio is over `source.rows`. |
+| `columns[].distinct` | Estimated distinct non-null values (HyperLogLog, about 1% error, 16 KiB per column however wide the data). |
+| `columns[].min`, `max` | Bounds, rendered: numeric when every value was a number, otherwise lexical. |
+| `columns[].mean`, `std` | Present when every non-null value was a number. |
+| `columns[].min_length`, `max_length` | Shortest and longest value, in characters. |
+| `columns[].values` | The sorted distinct values, when there were at most 25 and none longer than 64 characters — the categories of a `status`/`plan`/`region` column. Empty means *not collected*, never *no values*. |
+| `columns[].values_complete` | Whether `values` is the whole set. |
+| `redacted` | `true` under `--redact-samples`: `min`, `max` and `values` are dropped, because a bound is a row's value and a category list is a list of them. Counts, ratios, means and lengths stay. |
 
 ## Consuming it
 

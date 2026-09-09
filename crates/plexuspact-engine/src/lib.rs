@@ -30,7 +30,7 @@ mod hll;
 pub mod keys;
 mod plan;
 
-pub use profile::{profile, ColumnProfile, DatasetProfile};
+pub use profile::{profile, ColumnProfile, ColumnStats, DatasetProfile};
 
 use std::collections::BTreeMap;
 
@@ -53,6 +53,11 @@ pub struct RunOptions {
     /// dataset has no set here reports that it could not run — it never
     /// passes quietly.
     pub references: ReferenceSets,
+    /// Whether to profile every source column alongside the checks
+    /// ([`EngineOutput::profile`]). On by default: the cost is one string
+    /// pass per column, and without it a later run has nothing to say
+    /// "this is not what it was" against.
+    pub profile: bool,
 }
 
 impl Default for RunOptions {
@@ -61,6 +66,7 @@ impl Default for RunOptions {
             sample_failures: 5,
             now: DateTime::<Utc>::UNIX_EPOCH,
             references: ReferenceSets::none(),
+            profile: true,
         }
     }
 }
@@ -90,6 +96,12 @@ pub struct EngineOutput {
     /// a `primary_key` and every key column was present. What a later run of
     /// another dataset checks its `references` against.
     pub primary_key: Option<KeySet>,
+    /// What every source column looked like, in source order — declared or
+    /// not — when [`RunOptions::profile`] asked for it. Not a check and never
+    /// a verdict: the record a later run is compared against, so that a null
+    /// ratio that doubled or a category that appeared in a feed whose every
+    /// check passed still has somewhere to be noticed.
+    pub profile: Option<Vec<ColumnStats>>,
 }
 
 /// One column as the source presented it.

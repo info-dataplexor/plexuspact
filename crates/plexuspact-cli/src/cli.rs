@@ -156,6 +156,11 @@ pub struct CheckArgs {
     /// Mask sample values in output (keep row numbers).
     #[arg(long)]
     pub redact_samples: bool,
+    /// Do not record what each column looked like (null ratio, bounds, distinct
+    /// estimate, small value sets). That record is what a later run is compared
+    /// against for drift; leave it on unless the result must stay minimal.
+    #[arg(long)]
+    pub no_profile: bool,
     #[command(flatten)]
     pub input: InputArgs,
     /// Disable ANSI colors (also respects `NO_COLOR`).

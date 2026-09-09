@@ -73,6 +73,61 @@ fn check_json_is_valid_and_versioned() {
 }
 
 #[test]
+fn check_json_records_a_profile_unless_asked_not_to() {
+    let json = |extra: &[&str]| -> serde_json::Value {
+        let mut args = vec![
+            "check",
+            DATA,
+            "--contract",
+            CONTRACT,
+            "--format",
+            "json",
+            "--now",
+            "2026-07-10T00:00:00Z",
+        ];
+        args.extend_from_slice(extra);
+        let out = bin()
+            .args(&args)
+            .assert()
+            .code(1)
+            .get_output()
+            .stdout
+            .clone();
+        serde_json::from_slice(&out).expect("valid JSON")
+    };
+
+    let v = json(&[]);
+    let columns = v["profile"]["columns"].as_array().expect("profile.columns");
+    assert_eq!(
+        columns.len() as u64,
+        v["source"]["columns"].as_u64().unwrap()
+    );
+    let plan = columns.iter().find(|c| c["name"] == "plan").unwrap();
+    assert!(plan["values"].as_array().is_some_and(|vs| !vs.is_empty()));
+    assert_eq!(plan["values_complete"], true);
+    assert_eq!(v["profile"]["redacted"], false);
+
+    // Redaction strips what is a value and keeps what is a statistic.
+    let v = json(&["--redact-samples"]);
+    assert_eq!(v["profile"]["redacted"], true);
+    let plan = v["profile"]["columns"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["name"] == "plan")
+        .unwrap()
+        .clone();
+    assert!(
+        plan.get("min").is_none() && plan.get("values").is_none(),
+        "{plan}"
+    );
+    assert!(plan["null_ratio"].is_number());
+
+    let v = json(&["--no-profile"]);
+    assert!(v.get("profile").is_none());
+}
+
+#[test]
 fn check_missing_data_file_exits_2() {
     bin()
         .args([

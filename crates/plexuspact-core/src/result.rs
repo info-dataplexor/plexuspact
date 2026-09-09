@@ -44,6 +44,74 @@ pub struct RunResult {
     /// that nothing was recorded — never that the source had no columns.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub observed_schema: Option<ObservedSchema>,
+    /// What every column looked like, declared or not.
+    ///
+    /// The checks say whether the data kept the contract's promises. This
+    /// says what the data *was* — null ratio, distinct estimate, bounds, mean,
+    /// the value set when it was small enough to keep — so that the next run
+    /// can be held against it. A feed whose every check passes can still
+    /// halve its row count, double its nulls, or grow a new category
+    /// overnight, and the only way to see that is to have written down what
+    /// yesterday looked like.
+    ///
+    /// Additive within schema version 1 (ADR-007). Absent when the run was
+    /// asked not to profile (`--no-profile`) or came from a tool that
+    /// predates the field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<RunProfile>,
+}
+
+/// Per-column statistics recorded by a run.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RunProfile {
+    /// One entry per source column, in source order.
+    pub columns: Vec<ColumnStats>,
+    /// Whether the values were stripped (`--redact-samples`): bounds and value
+    /// sets are real data, and a run that masks its failing rows masks these
+    /// too. Counts, ratios, means and lengths survive; they describe the
+    /// column, not a row of it.
+    #[serde(default)]
+    pub redacted: bool,
+}
+
+/// What one column looked like during the run.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ColumnStats {
+    /// Column name, exactly as the source spells it.
+    pub name: String,
+    /// Number of null or empty values.
+    pub null_count: u64,
+    /// `null_count / rows`; `0` for an empty source.
+    pub null_ratio: f64,
+    /// Estimated distinct non-null values (HyperLogLog, about 1% error).
+    pub distinct: u64,
+    /// Minimum observed value, rendered: numeric when the column is, else lexical.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min: Option<String>,
+    /// Maximum observed value, rendered.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max: Option<String>,
+    /// Mean, when every non-null value was a number.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mean: Option<f64>,
+    /// Sample standard deviation, when numeric and more than one value.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub std: Option<f64>,
+    /// Shortest non-null value, in characters.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_length: Option<u64>,
+    /// Longest non-null value, in characters.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_length: Option<u64>,
+    /// The distinct values, sorted, when the column held at most 25 of them
+    /// and none longer than 64 characters. Empty means "not collected",
+    /// never "no values".
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub values: Vec<String>,
+    /// Whether `values` is the complete distinct set. False when the column
+    /// had too many, or too long, values to keep — or when they were redacted.
+    #[serde(default)]
+    pub values_complete: bool,
 }
 
 /// The source's own schema at the moment of a run.
@@ -295,6 +363,7 @@ mod tests {
                 message: None,
             }],
             observed_schema: None,
+            profile: None,
         }
     }
 

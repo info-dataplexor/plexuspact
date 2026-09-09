@@ -9,6 +9,10 @@ and get a `MIGRATION.md` entry.
 
 ## [Unreleased]
 
+### Added
+
+- `check` records what every column looked like, declared or not, as `profile` in the result: null count and ratio, an estimated distinct count, min and max, mean and standard deviation for numeric columns, value lengths, and the sorted value set when a column held at most 25 short values. It is computed in the same pass as the checks — a 16 KiB sketch per column for distinctness, so memory stays flat however wide the data — and it changes no verdict. It is the record a later run is compared against: a feed whose every check passes can still halve its row count or grow a new `status` overnight, and PlexusPact Cloud raises those as drift. `--redact-samples` drops the bounds and the value set from it; `--no-profile` leaves it out entirely.
+
 ## [0.2.0] - 2026-09-10
 
 ### Changed

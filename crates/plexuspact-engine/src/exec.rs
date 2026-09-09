@@ -4,9 +4,11 @@ use std::collections::{BTreeSet, HashMap};
 
 use plexuspact_contract::Contract;
 use plexuspact_io::BatchSource;
+use polars::prelude::DataType;
 
 use crate::checks::BatchView;
 use crate::column::{self, ColumnData};
+use crate::profile::ColumnAcc;
 use crate::{CheckOutcome, EngineError, EngineOutput, ObservedColumn, RunOptions};
 
 /// Executes a contract's checks against a streaming source.
@@ -55,6 +57,20 @@ pub fn execute(
         .map(|(name, def)| (name.clone(), def.r#type))
         .collect();
 
+    // One accumulator per source column, declared or not, fed in the same
+    // pass as the checks. Not a check: nothing here changes a verdict. It is
+    // the record the next run is compared against — the null ratio that
+    // doubled, the category that appeared, the mean that halved, in a feed
+    // whose every check passed because nobody wrote a check for that.
+    let mut profilers: Vec<ColumnAcc> = if opts.profile {
+        observed_columns
+            .iter()
+            .map(|c| ColumnAcc::for_run(c.name.clone()))
+            .collect()
+    } else {
+        Vec::new()
+    };
+
     let typing = source.typing();
     let mut base_row: u64 = 1; // 1-based data row numbers (header excluded)
     let mut rows_total: u64 = 0;
@@ -84,9 +100,32 @@ pub fn execute(
             pk.eval_batch(&view);
         }
 
+        for acc in &mut profilers {
+            // A column the batch does not carry is a reader quirk, not a fact
+            // about the data; a nested one cannot be summarised as scalars. A
+            // declared nested column has already been refused by `extract`;
+            // an undeclared one is simply not profiled.
+            let Ok(col) = df.column(acc.name()) else {
+                continue;
+            };
+            let series = col.as_materialized_series();
+            if column::nested_kind(series.dtype()).is_some() {
+                continue;
+            }
+            let strings = series.cast(&DataType::String)?;
+            acc.ingest(strings.str()?);
+        }
+
         base_row += batch_rows;
         rows_total += batch_rows;
     }
+
+    let profile = opts.profile.then(|| {
+        profilers
+            .into_iter()
+            .map(|acc| acc.finish_stats(rows_total))
+            .collect()
+    });
 
     // Every dataset check compiles to exactly one outcome, so the key's slot —
     // after the column checks, before the dataset checks — is a fixed offset.
@@ -107,5 +146,6 @@ pub fn execute(
         observed_typed,
         checks: outcomes,
         primary_key: key_set,
+        profile,
     })
 }

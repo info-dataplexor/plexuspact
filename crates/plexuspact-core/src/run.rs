@@ -14,9 +14,9 @@ use sha2::{Digest, Sha256};
 
 use crate::error::CoreError;
 use crate::result::{
-    CheckMetrics, CheckResult, CheckSeverity, CheckStatus, ConsumerRef, ContractRef, FailureSample,
-    ObservedColumnInfo, ObservedSchema, RunResult, RunStatus, RunSummary, SourceInfo,
-    RESULT_SCHEMA_VERSION,
+    CheckMetrics, CheckResult, CheckSeverity, CheckStatus, ColumnStats, ConsumerRef, ContractRef,
+    FailureSample, ObservedColumnInfo, ObservedSchema, RunProfile, RunResult, RunStatus,
+    RunSummary, SourceInfo, RESULT_SCHEMA_VERSION,
 };
 
 /// A request to validate one source against one contract.
@@ -42,6 +42,8 @@ pub struct RunRequest {
     pub now: Option<DateTime<Utc>>,
     /// Key sets of other datasets, for the contract's `references` checks.
     pub references: ReferenceSets,
+    /// Whether to record what every column looked like (`RunResult::profile`).
+    pub profile: bool,
 }
 
 /// What a run produced besides its result: state that is not part of the
@@ -66,6 +68,10 @@ pub struct CheckOptions {
     pub now: Option<DateTime<Utc>>,
     /// Key sets of other datasets, for the contract's `references` checks.
     pub references: ReferenceSets,
+    /// Whether to record what every column looked like (`RunResult::profile`).
+    /// On by default; a run that leaves it out gives the next run nothing to
+    /// be compared against.
+    pub profile: bool,
 }
 
 impl Default for CheckOptions {
@@ -75,6 +81,7 @@ impl Default for CheckOptions {
             redact_samples: false,
             now: None,
             references: ReferenceSets::none(),
+            profile: true,
         }
     }
 }
@@ -262,6 +269,7 @@ pub fn run_check_with(
         redact_samples,
         now,
         references: ReferenceSets::none(),
+        profile: true,
     };
     run_check_full(
         contract,
@@ -301,6 +309,7 @@ pub fn run_check_full(
         redact_samples: options.redact_samples,
         now: options.now,
         references: options.references.clone(),
+        profile: options.profile,
     };
     run_with_artifacts(req, tool_version)
 }
@@ -365,6 +374,7 @@ pub fn run_with_artifacts(
         sample_failures: req.sample_failures,
         now,
         references: req.references.clone(),
+        profile: req.profile,
     };
     let engine_out = execute(source.as_mut(), &req.contract, &opts)?;
 
@@ -380,6 +390,14 @@ pub fn run_with_artifacts(
                 dtype: c.dtype.clone(),
             })
             .collect(),
+    });
+
+    let profile = engine_out.profile.map(|columns| RunProfile {
+        columns: columns
+            .into_iter()
+            .map(|c| map_stats(c, req.redact_samples))
+            .collect(),
+        redacted: req.redact_samples,
     });
 
     let checks: Vec<CheckResult> = engine_out
@@ -423,8 +441,32 @@ pub fn run_with_artifacts(
         summary,
         checks,
         observed_schema,
+        profile,
     };
     Ok((result, artifacts))
+}
+
+/// Maps one column's run-time statistics into the wire format.
+///
+/// Under `--redact-samples` the bounds and the value set go: a minimum is a
+/// row's value, and a category list is a list of values. What stays —
+/// counts, ratios, mean, deviation, lengths — describes the column as a
+/// whole, and a later run can still be compared against it.
+fn map_stats(c: plexuspact_engine::ColumnStats, redact: bool) -> ColumnStats {
+    ColumnStats {
+        name: c.name,
+        null_count: c.null_count,
+        null_ratio: c.null_ratio,
+        distinct: c.distinct,
+        min: if redact { None } else { c.min },
+        max: if redact { None } else { c.max },
+        mean: c.mean,
+        std: c.std,
+        min_length: c.min_length,
+        max_length: c.max_length,
+        values: if redact { Vec::new() } else { c.values },
+        values_complete: !redact && c.values_complete,
+    }
 }
 
 /// Maps one engine outcome into a wire-format [`CheckResult`].

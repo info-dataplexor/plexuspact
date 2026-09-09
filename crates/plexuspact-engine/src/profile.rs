@@ -1,10 +1,18 @@
-//! Dataset profiling for `plexuspact init` (doc 03 §6).
+//! Dataset profiling for `plexuspact init` (doc 03 §6), and the per-column
+//! statistics a `check` run records alongside its checks.
 //!
 //! One streaming pass over the source (read stringly) computes, per column:
 //! null count/ratio, a distinct estimate (exact up to a cap, then reported as
 //! "at least"), min/max, numeric mean/std via Welford, string length bounds,
 //! and an inferred type. The profile is serializable so the Phase 1.5 AI-assist
 //! layer can consume it.
+//!
+//! The same accumulator runs inside [`crate::execute`] on every column the
+//! source presented, in a leaner mode ([`ColumnAcc::for_run`]): distinct
+//! values are sketched rather than held, and the type and format detectors —
+//! the expensive part, several parses per value — are off, because the
+//! contract already says what each column is. What comes out is a
+//! [`ColumnStats`] per column: the record a later run is compared against.
 
 use ahash::AHashSet;
 use plexuspact_io::{open, ReadOptions, Source, TypingMode};
@@ -12,6 +20,7 @@ use polars::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::error::EngineError;
+use crate::hll::Hll;
 
 /// Cap on exact distinct-value tracking; beyond this the count is a lower bound.
 const DISTINCT_CAP: usize = 1_000_000;
@@ -71,6 +80,46 @@ pub struct ColumnProfile {
     pub values_complete: bool,
 }
 
+/// What one column looked like during a `check` run.
+///
+/// The same accumulator as [`ColumnProfile`], run alongside the checks on
+/// every column the source presented — declared or not — and reduced to what
+/// a later run can be compared against. No inferred type and no format: the
+/// contract already says what a column is, and the question this answers is
+/// not "what is it" but "is it still what it was".
+///
+/// `distinct` is an estimate (HyperLogLog, about 1% error). A check run must
+/// stay bounded in memory however wide the dataset is, and a drift detector
+/// comparing 1,204,441 with 1,198,006 does not need the last digit.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ColumnStats {
+    /// Column name, exactly as the source spells it.
+    pub name: String,
+    /// Number of null/empty values.
+    pub null_count: u64,
+    /// `null_count / rows`.
+    pub null_ratio: f64,
+    /// Estimated distinct non-null values.
+    pub distinct: u64,
+    /// Minimum observed value (numeric min, else lexical), rendered.
+    pub min: Option<String>,
+    /// Maximum observed value, rendered.
+    pub max: Option<String>,
+    /// Mean of the values, when every non-null value was a number.
+    pub mean: Option<f64>,
+    /// Sample standard deviation, when numeric and more than one value.
+    pub std: Option<f64>,
+    /// Minimum string length (chars) over non-null values.
+    pub min_length: Option<u64>,
+    /// Maximum string length (chars) over non-null values.
+    pub max_length: Option<u64>,
+    /// The distinct values themselves, when few and short enough to keep (see
+    /// `KEEP_VALUES_CAP`). Empty means "not collected", never "no values".
+    pub values: Vec<String>,
+    /// Whether [`Self::values`] is the complete distinct set.
+    pub values_complete: bool,
+}
+
 /// Profile of a whole dataset.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DatasetProfile {
@@ -120,13 +169,52 @@ pub fn profile(source: &Source, read_options: &ReadOptions) -> Result<DatasetPro
     Ok(DatasetProfile { rows, columns })
 }
 
+/// How a column's distinct values are counted.
+enum Distinct {
+    /// Every hash, exactly, up to the cap; past it the count is a lower bound.
+    Exact { seen: AHashSet<u64>, capped: bool },
+    /// A 16 KiB sketch, whatever the cardinality.
+    Sketch(Hll),
+}
+
+impl Distinct {
+    fn add(&mut self, hash: u64) {
+        match self {
+            Distinct::Exact { seen, capped } => {
+                if *capped {
+                    return;
+                }
+                if seen.len() >= DISTINCT_CAP {
+                    *capped = true;
+                } else {
+                    seen.insert(hash);
+                }
+            }
+            Distinct::Sketch(hll) => hll.add(hash),
+        }
+    }
+
+    fn count(&self) -> u64 {
+        match self {
+            Distinct::Exact { seen, .. } => seen.len() as u64,
+            Distinct::Sketch(hll) => hll.estimate(),
+        }
+    }
+
+    fn capped(&self) -> bool {
+        matches!(self, Distinct::Exact { capped: true, .. })
+    }
+}
+
 /// Per-column streaming accumulator.
-struct ColumnAcc {
+pub(crate) struct ColumnAcc {
     name: String,
     non_null: u64,
     null: u64,
-    distinct: AHashSet<u64>,
-    distinct_capped: bool,
+    distinct: Distinct,
+    /// Whether to run the type and format detectors. On for `init`, which
+    /// has to guess what a column is; off for a `check` run, which knows.
+    infer: bool,
     int_ok: u64,
     float_ok: u64,
     bool_ok: u64,
@@ -155,12 +243,34 @@ struct ColumnAcc {
 
 impl ColumnAcc {
     fn new(name: String) -> Self {
+        Self::with(
+            name,
+            Distinct::Exact {
+                seen: AHashSet::new(),
+                capped: false,
+            },
+            true,
+        )
+    }
+
+    /// The accumulator a `check` run carries per source column: a distinct
+    /// sketch instead of a set, and no guessing at types or formats.
+    pub(crate) fn for_run(name: String) -> Self {
+        Self::with(name, Distinct::Sketch(Hll::new()), false)
+    }
+
+    /// The column this accumulates.
+    pub(crate) fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn with(name: String, distinct: Distinct, infer: bool) -> Self {
         ColumnAcc {
             name,
             non_null: 0,
             null: 0,
-            distinct: AHashSet::new(),
-            distinct_capped: false,
+            distinct,
+            infer,
             int_ok: 0,
             float_ok: 0,
             bool_ok: 0,
@@ -183,7 +293,7 @@ impl ColumnAcc {
         }
     }
 
-    fn ingest(&mut self, ca: &StringChunked) {
+    pub(crate) fn ingest(&mut self, ca: &StringChunked) {
         for opt in ca.into_iter() {
             match opt {
                 None => self.null += 1,
@@ -195,15 +305,11 @@ impl ColumnAcc {
 
     fn ingest_value(&mut self, s: &str) {
         self.non_null += 1;
+        self.distinct.add(hash_str(s));
 
-        if !self.distinct_capped {
-            if self.distinct.len() >= DISTINCT_CAP {
-                self.distinct_capped = true;
-            } else {
-                self.distinct.insert(hash_str(s));
-            }
-        }
-
+        // The numeric parses stay on in both modes: they are cheap, and the
+        // mean of a numeric column is the single most useful thing a later
+        // run can be compared against.
         let t = s.trim();
         if t.parse::<i64>().is_ok() {
             self.int_ok += 1;
@@ -214,23 +320,25 @@ impl ColumnAcc {
                 self.push_numeric(f);
             }
         }
-        if is_bool(t) {
-            self.bool_ok += 1;
-        }
-        if is_date(t) {
-            self.date_ok += 1;
-        }
-        if is_datetime(t) {
-            self.datetime_ok += 1;
-        }
-        if is_email(t) {
-            self.email_ok += 1;
-        }
-        if is_uuid(t) {
-            self.uuid_ok += 1;
-        }
-        if is_url(t) {
-            self.url_ok += 1;
+        if self.infer {
+            if is_bool(t) {
+                self.bool_ok += 1;
+            }
+            if is_date(t) {
+                self.date_ok += 1;
+            }
+            if is_datetime(t) {
+                self.datetime_ok += 1;
+            }
+            if is_email(t) {
+                self.email_ok += 1;
+            }
+            if is_uuid(t) {
+                self.uuid_ok += 1;
+            }
+            if is_url(t) {
+                self.url_ok += 1;
+            }
         }
 
         if self.keeping {
@@ -324,37 +432,61 @@ impl ColumnAcc {
         }
     }
 
-    fn finish(mut self, rows: u64) -> ColumnProfile {
-        let inferred = self.infer_type();
-        let format = self.infer_format().map(str::to_owned);
-        let values_complete = self.keeping;
-        let mut values = std::mem::take(&mut self.kept_values);
-        values.sort();
-        let numeric = matches!(inferred, "int" | "float");
-        let null_ratio = if rows == 0 {
+    /// Whether every non-null value parsed as a number.
+    fn numeric(&self) -> bool {
+        self.non_null > 0 && (self.int_ok == self.non_null || self.float_ok == self.non_null)
+    }
+
+    fn null_ratio(&self, rows: u64) -> f64 {
+        if rows == 0 {
             0.0
         } else {
             self.null as f64 / rows as f64
-        };
-        let std = if self.num_count > 1 {
-            Some((self.m2 / (self.num_count as f64 - 1.0)).sqrt())
-        } else {
-            None
-        };
+        }
+    }
 
+    fn std(&self) -> Option<f64> {
+        (self.num_count > 1).then(|| (self.m2 / (self.num_count as f64 - 1.0)).sqrt())
+    }
+
+    /// Bounds, rendered: numeric when the column is, else lexical.
+    fn bounds(&self) -> (Option<String>, Option<String>) {
+        if self.numeric() {
+            (self.num_min.map(fmt_num), self.num_max.map(fmt_num))
+        } else {
+            (self.str_min.clone(), self.str_max.clone())
+        }
+    }
+
+    fn take_values(&mut self) -> (Vec<String>, bool) {
+        let complete = self.keeping;
+        let mut values = std::mem::take(&mut self.kept_values);
+        values.sort();
+        (values, complete)
+    }
+
+    fn finish(mut self, rows: u64) -> ColumnProfile {
+        let inferred = self.infer_type();
+        let format = self.infer_format().map(str::to_owned);
+        let (values, values_complete) = self.take_values();
+        let null_ratio = self.null_ratio(rows);
+        let distinct = self.distinct.count();
+        let distinct_at_least = self.distinct.capped();
+        let numeric = matches!(inferred, "int" | "float");
         let (min, max) = if numeric {
             (self.num_min.map(fmt_num), self.num_max.map(fmt_num))
         } else {
             (self.str_min.clone(), self.str_max.clone())
         };
+        let std = self.std();
 
         ColumnProfile {
             name: self.name,
             inferred_type: inferred.to_owned(),
             null_count: self.null,
             null_ratio,
-            distinct: self.distinct.len() as u64,
-            distinct_at_least: self.distinct_capped,
+            distinct,
+            distinct_at_least,
             min,
             max,
             mean: numeric.then_some(self.mean),
@@ -362,6 +494,31 @@ impl ColumnAcc {
             min_length: self.min_len,
             max_length: self.max_len,
             format,
+            values,
+            values_complete,
+        }
+    }
+
+    /// The run-time reduction: what a later run compares itself against.
+    pub(crate) fn finish_stats(mut self, rows: u64) -> ColumnStats {
+        let (values, values_complete) = self.take_values();
+        let numeric = self.numeric();
+        let (min, max) = self.bounds();
+        let std = self.std();
+        let null_ratio = self.null_ratio(rows);
+        let distinct = self.distinct.count();
+
+        ColumnStats {
+            name: self.name,
+            null_count: self.null,
+            null_ratio,
+            distinct,
+            min,
+            max,
+            mean: numeric.then_some(self.mean),
+            std: if numeric { std } else { None },
+            min_length: self.min_len,
+            max_length: self.max_len,
             values,
             values_complete,
         }
@@ -522,5 +679,48 @@ mod tests {
         let long = acc_of(&["x".repeat(KEEP_VALUE_MAX_CHARS + 1).as_str()]);
         assert!(!long.values_complete);
         assert!(long.values.is_empty());
+    }
+
+    #[test]
+    fn the_run_accumulator_keeps_the_stats_and_skips_the_guessing() {
+        let mut acc = ColumnAcc::for_run("plan".to_owned());
+        for v in ["free", "pro", "free", "enterprise", "pro", "free"] {
+            acc.ingest_value(v);
+        }
+        // Detectors are off: nothing was counted as an email, a date, a bool.
+        assert_eq!(acc.email_ok + acc.date_ok + acc.bool_ok, 0);
+        let stats = acc.finish_stats(8);
+        assert_eq!(stats.null_count, 0);
+        assert_eq!(stats.null_ratio, 0.0);
+        assert_eq!(stats.distinct, 3);
+        assert_eq!(stats.values, vec!["enterprise", "free", "pro"]);
+        assert!(stats.values_complete);
+        assert_eq!(stats.min.as_deref(), Some("enterprise"));
+        assert_eq!(stats.max.as_deref(), Some("pro"));
+        assert_eq!(stats.mean, None);
+        assert_eq!((stats.min_length, stats.max_length), (Some(3), Some(10)));
+    }
+
+    #[test]
+    fn the_run_accumulator_averages_numbers_and_sketches_distinctness() {
+        let mut acc = ColumnAcc::for_run("amount".to_owned());
+        let values: Vec<String> = (1..=1_000).map(|i| i.to_string()).collect();
+        for v in &values {
+            acc.ingest_value(v);
+        }
+        let stats = acc.finish_stats(1_000);
+        assert_eq!(stats.mean, Some(500.5));
+        assert!(stats.std.is_some_and(|s| (s - 288.819).abs() < 0.01));
+        assert_eq!(stats.min.as_deref(), Some("1"));
+        assert_eq!(stats.max.as_deref(), Some("1000"));
+        // A sketch, not a set: near the truth, and the value list was dropped
+        // once the column proved it was not categorical.
+        assert!(
+            (950..=1_050).contains(&stats.distinct),
+            "{}",
+            stats.distinct
+        );
+        assert!(stats.values.is_empty());
+        assert!(!stats.values_complete);
     }
 }

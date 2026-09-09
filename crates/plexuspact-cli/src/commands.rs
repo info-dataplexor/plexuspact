@@ -244,6 +244,7 @@ fn cmd_check(args: CheckArgs, offline: bool) -> CmdResult {
         redact_samples: args.redact_samples,
         now,
         references,
+        profile: !args.no_profile,
     };
     let result = match run_check_full(
         contract,
