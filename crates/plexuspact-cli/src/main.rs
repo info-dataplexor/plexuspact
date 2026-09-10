@@ -6,6 +6,7 @@
 mod cli;
 mod commands;
 mod exit;
+mod mcp;
 mod preflight;
 mod push;
 mod register;

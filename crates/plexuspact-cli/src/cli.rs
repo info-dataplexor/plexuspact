@@ -51,6 +51,8 @@ pub enum Command {
     /// Every other command also accepts an ODCS document wherever it takes a
     /// contract file; use `import` to keep the converted draft and review it.
     Import(ImportArgs),
+    /// Serve the contract questions to an AI assistant over MCP (stdio).
+    Mcp(McpArgs),
 }
 
 /// `plexuspact init <path>`
@@ -308,6 +310,23 @@ pub enum ExportTarget {
     Dbt,
     /// Open Data Contract Standard v3 document (YAML).
     Odcs,
+}
+
+/// `plexuspact mcp`
+///
+/// The Model Context Protocol server, on stdin and stdout. It is not run by
+/// hand: an editor or agent is configured to start it, and from then on the
+/// assistant writing the pipeline can ask what a dataset promises and who
+/// breaks if it changes — before the change is written rather than after the
+/// delivery fails.
+///
+/// It only reads. No contract is registered and no run is reported, whatever
+/// the assistant asks for.
+#[derive(Debug, clap::Args)]
+pub struct McpArgs {
+    /// API root to ask (default `https://api.plexuspact.com/api/v1`).
+    #[arg(long, value_name = "URL", env = "PLEXUSPACT_API")]
+    pub api: Option<String>,
 }
 
 /// `plexuspact import <odcs.yaml>`

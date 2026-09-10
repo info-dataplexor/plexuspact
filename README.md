@@ -165,6 +165,7 @@ plexuspact check <path|-> --contract <file>         # validate (file or stdin)
 plexuspact diff <old.yaml> <new.yaml>                # classify contract changes (exit 1 on breaking)
 plexuspact validate-contract <file>                  # lint a contract without data
 plexuspact push <result.json|->                      # report a saved result to PlexusPact Cloud
+plexuspact mcp                                       # serve the contract questions to an AI assistant (MCP, stdio)
 
 # Global: --offline (never open a socket), -v/-vv (logs to stderr)
 ```
@@ -181,6 +182,7 @@ Measured with the repo's Criterion bench (`cargo bench -p plexuspact-engine`) on
 - [Contract reference](docs/src/contract-reference.md) — every field, every check
 - [CI recipes](docs/src/ci-recipes.md) · [Exit codes](docs/src/exit-codes.md) · [JSON result schema](docs/src/result-schema.md)
 - [Keeping a history](docs/src/cloud.md) — reporting runs to PlexusPact Cloud
+- [The MCP server](docs/src/mcp.md) — let the assistant writing your pipeline ask who breaks, before it edits
 - [Telemetry and network policy](docs/src/telemetry.md) · [FAQ](docs/src/faq.md)
 - [Architecture decision records](docs/adr/)
 

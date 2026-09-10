@@ -19,6 +19,7 @@
 - [Checking a warehouse table in place](warehouse.md)
 - [Keeping a history: reporting runs to PlexusPact Cloud](cloud.md)
 - [Integrations: quality signals to dbt / Databricks / OpenLineage](integrations.md)
+- [Asking before you break something: the MCP server](mcp.md)
 - [Public-API capability & reliability benchmark](public-api-benchmark.md)
 
 # Project

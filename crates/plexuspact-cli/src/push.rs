@@ -55,6 +55,22 @@ pub struct Destination {
     token: String,
 }
 
+impl Destination {
+    /// Attach a query string to an already-resolved destination.
+    ///
+    /// The guards live in [`endpoint_url`] and have already run on the path;
+    /// what is added here is a `limit` or a cursor, never a credential and
+    /// never anything that changes where the call goes. Personal data does not
+    /// belong in a query string, and nothing in this crate puts it there.
+    #[must_use]
+    pub fn with_query(mut self, query: &str) -> Self {
+        let sep = if self.url.contains('?') { '&' } else { '?' };
+        self.url.push(sep);
+        self.url.push_str(query);
+        self
+    }
+}
+
 /// Something that stopped a run from being reported. Never fatal to a check.
 #[derive(Debug)]
 pub struct PushError {
@@ -244,7 +260,17 @@ pub fn send(dest: &Destination, body: &str) -> Result<Recorded, PushError> {
 /// Shared by run ingest and by preflight, so a 402 or a revoked key reads the
 /// same way whichever call hit it.
 pub fn post_json(dest: &Destination, body: &str) -> Result<String, PushError> {
-    send_json(dest, "POST", body)
+    send_json(dest, "POST", Some(body))
+}
+
+/// GET a resolved destination and hand back the reply body.
+///
+/// Reading is the one thing this client did not do until the MCP server needed
+/// it: every other call here changes something. It goes through the same hop as
+/// the rest so that a revoked key, an exhausted plan and a self-hosted install
+/// behind a slow proxy all read the same way whichever verb hit them.
+pub fn get_json(dest: &Destination) -> Result<String, PushError> {
+    send_json(dest, "GET", None)
 }
 
 /// PUT JSON to a resolved destination and hand back the reply body.
@@ -255,13 +281,13 @@ pub fn post_json(dest: &Destination, body: &str) -> Result<String, PushError> {
 /// That is a successful call with an unwelcome answer, not a failure, and the
 /// caller is the one who has to say so.
 pub fn put_json(dest: &Destination, body: &str) -> Result<String, PushError> {
-    send_json(dest, "PUT", body)
+    send_json(dest, "PUT", Some(body))
 }
 
 /// The one HTTP hop. Every guard the CLI has — the timeout, the user agent, the
 /// bearer header, the RFC 7807 reading of a rejection — lives here once so no
 /// endpoint can quietly acquire different manners.
-fn send_json(dest: &Destination, method: &str, body: &str) -> Result<String, PushError> {
+fn send_json(dest: &Destination, method: &str, body: Option<&str>) -> Result<String, PushError> {
     // `http_status_as_error(false)`: a 4xx carries a `problem+json` body saying
     // precisely what was wrong, and turning it into a transport error throws
     // that away.
@@ -272,21 +298,36 @@ fn send_json(dest: &Destination, method: &str, body: &str) -> Result<String, Pus
         .build();
     let agent = config.new_agent();
 
-    let builder = if method == "PUT" {
-        agent.put(&dest.url)
-    } else {
-        agent.post(&dest.url)
+    let bearer = format!("Bearer {}", dest.token);
+    // The three verbs are three types in `ureq`, so they cannot share a builder
+    // variable — but they share every header and every guard above.
+    let sent = match method {
+        "GET" => agent.get(&dest.url).header("authorization", &bearer).call(),
+        "PUT" => agent
+            .put(&dest.url)
+            .header("authorization", &bearer)
+            .header("content-type", "application/json")
+            .send(body.unwrap_or_default()),
+        _ => agent
+            .post(&dest.url)
+            .header("authorization", &bearer)
+            .header("content-type", "application/json")
+            .send(body.unwrap_or_default()),
     };
-    let mut response = builder
-        .header("authorization", format!("Bearer {}", dest.token))
-        .header("content-type", "application/json")
-        .send(body)
-        .map_err(|e| {
-            PushError::with_hint(
-                format!("could not reach {}: {e}", dest.url),
-                "the run was not reported; the check result above still stands".to_owned(),
-            )
-        })?;
+    // A read that never arrived changed nothing, so telling its caller that a
+    // run went unreported would be a sentence about something that never
+    // happened.
+    let hint = if method == "GET" {
+        "nothing was read and nothing was changed"
+    } else {
+        "the run was not reported; the check result above still stands"
+    };
+    let mut response = sent.map_err(|e| {
+        PushError::with_hint(
+            format!("could not reach {}: {e}", dest.url),
+            hint.to_owned(),
+        )
+    })?;
 
     let status = response.status().as_u16();
     let text = response.body_mut().read_to_string().unwrap_or_default();

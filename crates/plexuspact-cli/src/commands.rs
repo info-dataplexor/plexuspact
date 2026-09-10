@@ -21,7 +21,7 @@ use plexuspact_report::{
 
 use crate::cli::{
     CheckArgs, Cli, Command, DiffArgs, ExportArgs, ExportLang, ExportTarget, Format, ImportArgs,
-    InitArgs, PushArgs, RegisterArgs, ValidateArgs,
+    InitArgs, McpArgs, PushArgs, RegisterArgs, ValidateArgs,
 };
 use crate::exit::{CODE_FAILURES, CODE_INTERNAL, CODE_OK, CODE_USAGE};
 use crate::preflight;
@@ -126,6 +126,25 @@ pub fn dispatch(cli: Cli) -> CmdResult {
         Command::ValidateContract(args) => cmd_validate(args),
         Command::Export(args) => cmd_export(args),
         Command::Import(args) => cmd_import(args),
+        Command::Mcp(args) => cmd_mcp(args, offline),
+    }
+}
+
+/// `plexuspact mcp`
+///
+/// Hands stdio to the MCP server and comes back when the client closes it. The
+/// exit code is about the conversation, not about any data: a broken pipe when
+/// the editor quits is how this command is supposed to end, and reporting that
+/// as an internal error would fill a user's log with failures every time they
+/// closed a window.
+fn cmd_mcp(args: McpArgs, offline: bool) -> CmdResult {
+    match crate::mcp::serve(args.api, offline) {
+        Ok(()) => Ok(CODE_OK),
+        Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Ok(CODE_OK),
+        Err(e) => {
+            eprintln!("{} the MCP connection failed: {e}", err_glyph());
+            Ok(CODE_INTERNAL)
+        }
     }
 }
 
